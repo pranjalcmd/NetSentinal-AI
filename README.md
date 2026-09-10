@@ -1,6 +1,6 @@
 # NetSentinel AI
 
-AI-assisted network traffic intelligence platform for a hackathon.
+AI-assisted network traffic intelligence platform.
 
 ## What it does
 
