@@ -51,8 +51,6 @@ The starter frontend currently uses mocked API data until the backend is connect
 
 The codebase deliberately keeps nDPI behind `dpi/ndpi_adapter.py`. This lets the team first stabilize the product using fixture flows and then wire in the local nDPI build without rewriting the backend or UI.
 
-The official nDPI project is available at https://github.com/ntop/nDPI/ .
-
 ## Safety / privacy
 
 Run captures only on traffic you are authorized to inspect. Do not send raw packet payloads, credentials, cookies, authorization headers, or other sensitive content to an external AI provider.
