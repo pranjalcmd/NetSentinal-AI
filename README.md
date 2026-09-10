@@ -1,6 +1,6 @@
 # NetSentinel AI
 
-AI-assisted network traffic intelligence platform.
+AI-assisted network traffic intelligence platform for a hackathon.
 
 ## What it does
 
@@ -50,6 +50,8 @@ The starter frontend currently uses mocked API data until the backend is connect
 ## nDPI integration
 
 The codebase deliberately keeps nDPI behind `dpi/ndpi_adapter.py`. This lets the team first stabilize the product using fixture flows and then wire in the local nDPI build without rewriting the backend or UI.
+
+The official nDPI project is available at https://github.com/ntop/nDPI/ .
 
 ## Safety / privacy
 

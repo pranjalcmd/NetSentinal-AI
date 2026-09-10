@@ -1,34 +1,80 @@
 from datetime import datetime, timezone
+
 from detection.rules.basic import evaluate_flow, build_alert
 from dpi.ndpi_adapter import NDPIAdapter
-from backend.app.services.store import store
+from app.services.store import store
+
 
 adapter = NDPIAdapter()
 
+
 def analyse_fixture(flows: list[dict]) -> dict:
+    # Clear old data before loading a new analysis
     store.reset()
-    for f in flows:
-        store.flows[f["flow_id"]] = f
-        alert = build_alert(f, evaluate_flow(f))
+
+    # Load every flow into the shared backend store
+    for flow in flows:
+        flow_id = flow.get("flow_id")
+
+        if not flow_id:
+            continue
+
+        store.flows[flow_id] = flow
+
+        # Run the detection rules created by Member 2
+        result = evaluate_flow(flow)
+
+        # Convert a detection result into an alert
+        alert = build_alert(flow, result)
+
         if alert:
-            alert["alert_id"] = f"A-{f['flow_id']}"
+            alert["alert_id"] = f"A-{flow_id}"
             alert["created_at"] = datetime.now(timezone.utc).isoformat()
+
             store.alerts[alert["alert_id"]] = alert
+
     return summary()
+
 
 def summary() -> dict:
     flows = list(store.flows.values())
     alerts = list(store.alerts.values())
-    proto = {}
-    for f in flows: proto[f["application"]] = proto.get(f["application"], 0) + 1
-    risks = {k: 0 for k in ("LOW", "MEDIUM", "HIGH", "CRITICAL")}
-    for a in alerts: risks[a["severity"]] += 1
+
+    # Count applications/protocols
+    protocols = {}
+
+    for flow in flows:
+        application = flow.get("application", "UNKNOWN")
+        protocols[application] = protocols.get(application, 0) + 1
+
+    # Count alerts by severity
+    risks = {
+        "LOW": 0,
+        "MEDIUM": 0,
+        "HIGH": 0,
+        "CRITICAL": 0,
+    }
+
+    for alert in alerts:
+        severity = alert.get("severity", "LOW")
+
+        if severity in risks:
+            risks[severity] += 1
+
     return {
         "total_flows": len(flows),
         "suspicious_flows": len(alerts),
-        "high_risk": sum(1 for a in alerts if a["severity"] in {"HIGH", "CRITICAL"}),
-        "protocols": len(proto),
+        "high_risk": sum(
+            1
+            for alert in alerts
+            if alert.get("severity") in {"HIGH", "CRITICAL"}
+        ),
+        "protocols": len(protocols),
         "risk_distribution": risks,
-        "protocol_distribution": proto,
-        "recent_alerts": sorted(alerts, key=lambda x: x["created_at"], reverse=True)[:10],
+        "protocol_distribution": protocols,
+        "recent_alerts": sorted(
+            alerts,
+            key=lambda alert: alert["created_at"],
+            reverse=True,
+        )[:10],
     }
