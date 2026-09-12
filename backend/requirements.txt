@@ -1,0 +1,16 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+pydantic>=2.10,<3
+httpx>=0.28,<1
+python-multipart>=0.0.20,<1
+pydantic-settings>=2.7,<3
+
+# ML detection engine
+numpy>=2.0,<3
+pandas>=2.2,<3
+scikit-learn>=1.5,<2
+joblib>=1.4,<2
+
+# AI analyst layer. Only needed once you set AI_API_KEY in .env — without it
+# the backend serves the mock explanations and never imports this.
+anthropic>=1.0,<2

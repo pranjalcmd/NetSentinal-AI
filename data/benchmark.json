@@ -1,0 +1,144 @@
+{
+  "dataset": "C:\\Users\\pranj\\OneDrive\\Desktop\\hacka\\netsentinel\\data\\dataset.json",
+  "evaluated": "held-out test split (800 of 4000)",
+  "flows_evaluated": 800,
+  "boundary_cases": 130,
+  "trained_model_loaded": true,
+  "binary": {
+    "rules": {
+      "accuracy": 0.8488,
+      "precision": 0.8643,
+      "recall": 0.8125,
+      "f1": 0.8376,
+      "tp": 312,
+      "fp": 49,
+      "fn": 72,
+      "tn": 367,
+      "false_positive_rate": 0.1178
+    },
+    "ml_heuristic": {
+      "accuracy": 0.8625,
+      "precision": 0.9006,
+      "recall": 0.8021,
+      "f1": 0.8485,
+      "tp": 308,
+      "fp": 34,
+      "fn": 76,
+      "tn": 382,
+      "false_positive_rate": 0.0817
+    },
+    "ml_trained": {
+      "accuracy": 0.9187,
+      "precision": 0.8584,
+      "recall": 0.9948,
+      "f1": 0.9216,
+      "tp": 382,
+      "fp": 63,
+      "fn": 2,
+      "tn": 353,
+      "false_positive_rate": 0.1514
+    },
+    "fused": {
+      "accuracy": 0.9213,
+      "precision": 0.8591,
+      "recall": 1.0,
+      "f1": 0.9242,
+      "tp": 384,
+      "fp": 63,
+      "fn": 0,
+      "tn": 353,
+      "false_positive_rate": 0.1514
+    }
+  },
+  "multiclass": {
+    "ml_heuristic": {
+      "accuracy": 0.7275,
+      "macro_f1": 0.5213
+    },
+    "ml_trained": {
+      "accuracy": 0.9187,
+      "macro_f1": 0.9186,
+      "per_class": {
+        "BENIGN": {
+          "precision": 0.9943661971830986,
+          "recall": 0.8485576923076923,
+          "f1-score": 0.9156939040207522,
+          "support": 416.0
+        },
+        "BOTNET": {
+          "precision": 0.8888888888888888,
+          "recall": 1.0,
+          "f1-score": 0.9411764705882353,
+          "support": 64.0
+        },
+        "BRUTE_FORCE": {
+          "precision": 0.8888888888888888,
+          "recall": 1.0,
+          "f1-score": 0.9411764705882353,
+          "support": 56.0
+        },
+        "DATA_EXFILTRATION": {
+          "precision": 0.8260869565217391,
+          "recall": 0.95,
+          "f1-score": 0.8837209302325582,
+          "support": 40.0
+        },
+        "DNS_TUNNELING": {
+          "precision": 0.8648648648648649,
+          "recall": 1.0,
+          "f1-score": 0.927536231884058,
+          "support": 64.0
+        },
+        "DOS": {
+          "precision": 0.8235294117647058,
+          "recall": 1.0,
+          "f1-score": 0.9032258064516129,
+          "support": 56.0
+        },
+        "PORT_SCAN": {
+          "precision": 0.8648648648648649,
+          "recall": 1.0,
+          "f1-score": 0.927536231884058,
+          "support": 64.0
+        },
+        "SUSPICIOUS_LEGACY_SERVICE": {
+          "precision": 0.8333333333333334,
+          "recall": 1.0,
+          "f1-score": 0.9090909090909091,
+          "support": 40.0
+        },
+        "accuracy": 0.91875,
+        "macro avg": {
+          "precision": 0.8731029257887981,
+          "recall": 0.9748197115384616,
+          "f1-score": 0.9186446193425524,
+          "support": 800.0
+        },
+        "weighted avg": {
+          "precision": 0.9294002075632061,
+          "recall": 0.91875,
+          "f1-score": 0.918609496198262,
+          "support": 800.0
+        }
+      }
+    }
+  },
+  "throughput_flows_per_second": {
+    "rules": 594972,
+    "ml_heuristic": 99963,
+    "ml_trained": 462
+  },
+  "dpi": {
+    "mode": "python-l7",
+    "ndpi_reader": null,
+    "pcap_mb": 1.16,
+    "packets": 3869,
+    "flows": 593,
+    "seconds": 0.021,
+    "packets_per_second": 181266,
+    "mbytes_per_second": 54.5,
+    "read_only_packets_per_second": 1242334,
+    "end_to_end_seconds": 1.388,
+    "end_to_end_flows_per_second": 427
+  }
+}
