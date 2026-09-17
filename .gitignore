@@ -13,3 +13,8 @@ build/
 node_modules/
 *.pcap
 *.pcapng
+
+.next/
+node_modules/
+out/
+build/
