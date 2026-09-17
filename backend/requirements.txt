@@ -1,0 +1,16 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+pydantic>=2.10,<3
+httpx>=0.28,<1
+python-multipart>=0.0.20,<1
+pydantic-settings>=2.7,<3
+
+# ML detection engine
+numpy>=2.0,<3
+pandas>=2.2,<3
+scikit-learn>=1.5,<2
+joblib>=1.4,<2
+
+# AI analyst layer. No SDK needed — Gemini, OpenAI-compatible and Anthropic are
+# all plain JSON over httpx, which is already above. Set AI_API_KEY to go live;
+# with no key the backend serves mock explanations and makes no network calls.

@@ -1,0 +1,109 @@
+@import url('https://fonts.googleapis.com/css2?family=Great+Vibes&family=Cinzel:wght@400;600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--bg-base);
+  --color-foreground: var(--text-primary);
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-script: 'Great Vibes', cursive;
+  --font-serif: 'Cinzel', serif;
+}
+
+.font-script {
+  font-family: 'Great Vibes', cursive !important;
+}
+
+:root {
+  /* Graphite-navy palette */
+  --bg-base: #0A0E14;
+  --bg-surface: #0F141C;
+  --bg-elevated: #131A24;
+  --bg-overlay: #18212D;
+
+  /* Hairline borders */
+  --border-subtle: #242B36;
+  --border-default: #242B36;
+  --border-strong: #2E3746;
+
+  /* Text palette */
+  --text-primary: #E4E8EE;
+  --text-secondary: #768396;
+  --text-muted: #515E72;
+  --text-disabled: #374151;
+
+  /* Cold Cyan-Teal Accent (Live states, active links ONLY) */
+  --accent-teal: #3DD9C4;
+  --accent-teal-dim: rgba(61, 217, 196, 0.10);
+  --accent-teal-border: rgba(61, 217, 196, 0.25);
+
+  /* Strict Severity Colors (ONLY on risk badges and graph nodes) */
+  --severity-critical: #E8483A;
+  --severity-high: #E8863A;
+  --severity-medium: #E8C93A;
+  --severity-low: #4B7BE5;
+
+  /* Layout dimensions */
+  --sidebar-width: 230px;
+  --sidebar-collapsed: 54px;
+  --topbar-height: 48px;
+}
+
+/* Base reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Monospace text for technical values */
+.font-mono, code, pre, td.mono-value, span.mono-value {
+  font-family: 'IBM Plex Mono', monospace !important;
+}
+
+/* Dense hairline borders & zero rounded cards */
+.hairline-border {
+  border: 1px solid var(--border-default);
+}
+
+.surface-dense {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+}
+
+/* Custom crisp scrollbars */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 0;
+}
+
+/* Live signal indicator dot */
+.live-teal-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent-teal);
+  box-shadow: 0 0 6px var(--accent-teal);
+}
+
+/* Remove default shadows & rounded styles */
+button, input, select, textarea {
+  border-radius: 2px;
+}
