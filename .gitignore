@@ -6,3 +6,10 @@ __pycache__/
 node_modules/
 dist/
 uploads/
+
+.next/
+out/
+build/
+node_modules/
+*.pcap
+*.pcapng
