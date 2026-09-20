@@ -79,14 +79,20 @@ app.add_middleware(
 
 
 # ============================================================
-# STARTUP
+# STARTUP & STORE MANAGEMENT
 # ============================================================
 
 @app.on_event("startup")
-def _preload_demo() -> None:
-    flows = _demo_flows()
-    if flows:
-        analyse_flows(flows)
+def _startup_init() -> None:
+    # Clean startup store by default; live ingest populates memory dynamically
+    pass
+
+
+@app.post("/api/store/clear", tags=["orchestration"])
+def clear_store():
+    """Clear all loaded flows, alerts, and AI narratives from memory store."""
+    store.reset()
+    return {"status": "ok", "message": "Memory store cleared successfully", "flows": 0, "alerts": 0}
 
 
 # ============================================================

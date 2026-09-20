@@ -349,10 +349,11 @@ export async function getTrigger(id: string): Promise<Trigger> {
  */
 export async function getHosts(customerId?: string): Promise<Host[]> {
   try {
-    const rawEntities = await fetch('http://localhost:8000/api/entities', { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
-    if (Array.isArray(rawEntities) && rawEntities.length > 0) {
-      const internalEntities = rawEntities.filter((e: any) => e.kind === 'internal' || e.type === 'person')
-      if (internalEntities.length > 0) {
+    const res = await fetch('http://localhost:8000/api/entities', { cache: 'no-store' });
+    if (res.ok) {
+      const rawEntities = await res.json();
+      if (Array.isArray(rawEntities)) {
+        const internalEntities = rawEntities.filter((e: any) => e.kind === 'internal' || e.type === 'person');
         return internalEntities.map((e: any) => ({
           id: e.id || e.name,
           ip: e.id || e.name,
@@ -367,7 +368,7 @@ export async function getHosts(customerId?: string): Promise<Host[]> {
           bytesOut: 1024 * 1024 * 25,
           firstSeen: new Date().toISOString(),
           lastSeen: new Date().toISOString()
-        }))
+        }));
       }
     }
   } catch (_e) {}
@@ -390,10 +391,11 @@ export async function getHost(id: string): Promise<Host> {
 
 export async function getDestinations(customerId?: string): Promise<Destination[]> {
   try {
-    const rawEntities = await fetch('http://localhost:8000/api/entities', { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
-    if (Array.isArray(rawEntities) && rawEntities.length > 0) {
-      const externalEntities = rawEntities.filter((e: any) => e.kind === 'external' || e.type === 'organization')
-      if (externalEntities.length > 0) {
+    const res = await fetch('http://localhost:8000/api/entities', { cache: 'no-store' });
+    if (res.ok) {
+      const rawEntities = await res.json();
+      if (Array.isArray(rawEntities)) {
+        const externalEntities = rawEntities.filter((e: any) => e.kind === 'external' || e.type === 'organization');
         return externalEntities.map((e: any) => ({
           id: e.id || e.name,
           ip: e.id || e.name,
@@ -408,7 +410,7 @@ export async function getDestinations(customerId?: string): Promise<Destination[
           lastSeen: new Date().toISOString(),
           protocols: ['HTTPS', 'TLS'],
           findings: []
-        }))
+        }));
       }
     }
   } catch (_e) {}
@@ -455,32 +457,35 @@ export async function getFlows(filters?: Partial<ListFilters & {
   protocol?: string
 }>): Promise<Flow[]> {
   try {
-    const rawBackendFlows = await fetch('http://localhost:8000/api/flows', { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
-    if (Array.isArray(rawBackendFlows) && rawBackendFlows.length > 0) {
-      let mapped: Flow[] = rawBackendFlows.map((f: any) => ({
-        id: f.flow_id || f.id || `F-${Math.random().toString(36).substr(2, 6)}`,
-        timestamp: f.timestamp || new Date().toISOString(),
-        srcIp: f.source_ip || f.srcIp || '192.168.1.1',
-        srcPort: f.source_port || f.srcPort || 80,
-        dstIp: f.destination_ip || f.dstIp || '10.0.0.1',
-        dstPort: f.destination_port || f.dstPort || 443,
-        protocol: f.transport || f.protocol || 'TCP',
-        application: f.application || f.protocol || 'HTTP',
-        packets: f.packets || 1,
-        bytes: f.bytes || 64,
-        duration: f.duration_seconds || 1,
-        riskScore: f.risk_score ?? (f.label === 'malicious' ? 85 : 15),
-        risk: f.label === 'malicious' ? 'high' : 'low',
-        captureId: 'CAP-1050',
-        sensorId: 'SNS-042',
-        relatedFindings: []
-      }))
+    const res = await fetch('http://localhost:8000/api/flows', { cache: 'no-store' });
+    if (res.ok) {
+      const rawBackendFlows = await res.json();
+      if (Array.isArray(rawBackendFlows)) {
+        let mapped: Flow[] = rawBackendFlows.map((f: any) => ({
+          id: f.flow_id || f.id || `F-${Math.random().toString(36).substr(2, 6)}`,
+          timestamp: f.timestamp || new Date().toISOString(),
+          srcIp: f.source_ip || f.srcIp || '192.168.1.1',
+          srcPort: f.source_port || f.srcPort || 80,
+          dstIp: f.destination_ip || f.dstIp || '10.0.0.1',
+          dstPort: f.destination_port || f.dstPort || 443,
+          protocol: f.transport || f.protocol || 'TCP',
+          application: f.application || f.protocol || 'HTTP',
+          packets: f.packets || 1,
+          bytes: f.bytes || 64,
+          duration: f.duration_seconds || 1,
+          riskScore: f.risk_score ?? (f.label === 'malicious' ? 85 : 15),
+          risk: f.label === 'malicious' ? 'high' : 'low',
+          captureId: 'CAP-1050',
+          sensorId: 'SNS-042',
+          relatedFindings: []
+        }));
 
-      if ((filters as { minRiskScore?: number })?.minRiskScore !== undefined) {
-        const minScore = (filters as { minRiskScore: number }).minRiskScore
-        mapped = mapped.filter(f => f.riskScore >= minScore)
+        if ((filters as { minRiskScore?: number })?.minRiskScore !== undefined) {
+          const minScore = (filters as { minRiskScore: number }).minRiskScore;
+          mapped = mapped.filter(f => f.riskScore >= minScore);
+        }
+        return mapped;
       }
-      return mapped
     }
   } catch (_e) {
     // Fallback to local mock if backend offline
@@ -527,28 +532,34 @@ export async function getFlow(id: string): Promise<Flow> {
  */
 export async function getFindings(filters?: Partial<ListFilters>): Promise<Finding[]> {
   try {
-    const rawBackendAlerts = await fetch('http://localhost:8000/api/alerts', { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
-    if (Array.isArray(rawBackendAlerts) && rawBackendAlerts.length > 0) {
-      const mapped: Finding[] = rawBackendAlerts.map((a: any, idx: number) => ({
-        id: a.id || `FND-${100 + idx}`,
-        title: a.title || a.rule_name || 'Correlated Network Anomaly',
-        description: Array.isArray(a.evidence) ? a.evidence.join(' ') : (a.description || 'Observed anomalous traffic pattern'),
-        severity: (a.severity || 'high').toLowerCase() as any,
-        status: 'open',
-        category: a.category || 'beaconing',
-        riskScore: a.risk_score || 75,
-        confidence: 85,
-        hostIds: [a.src_ip || '192.168.1.49'],
-        destinationIds: [a.dst_ip || '198.51.100.127'],
-        captureId: 'CAP-1050',
-        sensorId: 'SNS-042',
-        triggerIds: [],
-        flowIds: a.flow_id ? [a.flow_id] : [],
-        evidenceIds: [],
-        firstSeen: a.timestamp || new Date().toISOString(),
-        lastSeen: a.timestamp || new Date().toISOString(),
-      }))
-      return mapped
+    const res = await fetch('http://localhost:8000/api/alerts', { cache: 'no-store' });
+    if (res.ok) {
+      const rawBackendAlerts = await res.json();
+      if (Array.isArray(rawBackendAlerts)) {
+        let mapped: Finding[] = rawBackendAlerts.map((a: any, idx: number) => ({
+          id: a.id || `FND-${100 + idx}`,
+          title: a.title || a.rule_name || 'Correlated Network Anomaly',
+          description: Array.isArray(a.evidence) ? a.evidence.join(' ') : (a.description || 'Observed anomalous traffic pattern'),
+          severity: (a.severity || 'high').toLowerCase() as any,
+          status: 'open',
+          category: a.category || 'beaconing',
+          riskScore: a.risk_score || 75,
+          confidence: 85,
+          hostIds: [a.source_ip || '10.0.0.14'],
+          destinationIds: [a.destination_ip || '198.51.100.127'],
+          captureId: 'CAP-1050',
+          sensorId: 'SNS-042',
+          triggerIds: [],
+          flowIds: a.flow_id ? [a.flow_id] : [],
+          evidenceIds: [],
+          firstSeen: a.timestamp || new Date().toISOString(),
+          lastSeen: a.timestamp || new Date().toISOString(),
+        }));
+        if (filters?.severity) {
+          mapped = mapped.filter(f => f.severity === filters.severity);
+        }
+        return mapped;
+      }
     }
   } catch (_e) {
     // Fallback to local mock if backend offline
@@ -564,11 +575,10 @@ export async function getFindings(filters?: Partial<ListFilters>): Promise<Findi
   return results.map(f => ({ ...f }))
 }
 
-/**
- * Fetches a single finding by ID.
- * @throws NotFoundError if the finding does not exist.
- */
 export async function getFinding(id: string): Promise<Finding> {
+  const findings = await getFindings()
+  const found = findings.find(f => f.id === id)
+  if (found) return found
   await delay(60, 120)
   const finding = MOCK_FINDING_MAP[id]
   if (!finding) throw new NotFoundError('Finding', id)
@@ -584,6 +594,33 @@ export async function getFinding(id: string): Promise<Finding> {
  * Returns incidents sorted by risk score descending.
  */
 export async function getIncidents(filters?: Partial<ListFilters>): Promise<Incident[]> {
+  try {
+    const res = await fetch('http://localhost:8000/api/alerts', { cache: 'no-store' });
+    if (res.ok) {
+      const rawBackendAlerts = await res.json();
+      if (Array.isArray(rawBackendAlerts)) {
+        let mapped: Incident[] = rawBackendAlerts.map((a: any, idx: number) => ({
+          id: `INC-${a.id || (2026 + idx)}`,
+          title: a.title || 'Anomalous Network Incident',
+          description: Array.isArray(a.evidence) ? a.evidence.join(' ') : (a.description || 'Correlated security findings across endpoints'),
+          status: 'investigating',
+          riskScore: a.risk_score || 85,
+          confidence: 82,
+          hostIds: [a.source_ip || '10.0.0.14'],
+          findingIds: [a.id || `FND-${100 + idx}`],
+          captureIds: ['CAP-1050'],
+          sensorIds: ['SNS-042'],
+          firstSeen: a.timestamp || new Date().toISOString(),
+          lastSeen: a.timestamp || new Date().toISOString(),
+        }));
+        if (filters?.status) {
+          mapped = mapped.filter(i => i.status === filters.status);
+        }
+        return mapped;
+      }
+    }
+  } catch (_e) {}
+
   await delay(80, 150)
   let results = [...MOCK_INCIDENTS]
 
