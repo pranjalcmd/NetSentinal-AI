@@ -72,11 +72,30 @@ CATEGORY_LABELS = {
 }
 
 
-def analyse_flows(flows: list[dict], capture_id: str | None = None) -> dict:
-    """Analyse a batch of normalized flows and replace the store contents."""
+def analyse_flows(flows: list[dict], capture_id: str | None = None,
+                  replace: bool = True) -> dict:
+    """Analyse a batch of normalized flows.
+
+    `replace=True` (a pcap upload) makes the batch the working set.
+    `replace=False` (a live agent flush) merges it into the working set and
+    re-runs detection over the union: a 10-second batch on its own has no
+    cross-flow context, and every detector above rule level needs one
+    (see the module docstring). Merging is by `flow_id`, so a replayed batch
+    updates its flows instead of duplicating them.
+    """
+    carried = [] if replace else list(store.flows.values())
     store.reset()
 
-    flows = [flow for flow in flows if flow.get("flow_id")]
+    merged = {flow["flow_id"]: flow for flow in carried}
+    for flow in flows:
+        if flow.get("flow_id"):
+            merged[flow["flow_id"]] = flow
+    flows = list(merged.values())
+    if not replace:
+        # ponytail: newest-N window, no time-based eviction. Swap for a
+        # timestamp cut if a slow trickle should still age out on its own.
+        flows = flows[-settings.max_live_flows:]
+
     for flow in flows:
         store.flows[flow["flow_id"]] = flow
 

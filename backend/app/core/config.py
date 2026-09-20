@@ -17,6 +17,17 @@ class Settings(BaseSettings):
     # --- Detection --------------------------------------------------------
     model_path: str = str(ROOT / "models" / "ndpi_detector.joblib")
 
+    # --- Live capture agent (client/capture_agent.py, client/netsentinel.js) --
+    # Shared secret checked at /api/agent/ingest. Empty = endpoint is open.
+    agent_api_key: str = ""
+    # Live flows accumulate across batches; the oldest are dropped past this.
+    max_live_flows: int = 5000
+
+    # Extra browser origins allowed to call the API, comma-separated. The dev
+    # servers are always allowed. "*" is accepted and turns off credentialed
+    # CORS, which the spec requires and browsers enforce.
+    cors_origins: str = ""
+
     database_path: str = "./netsentinel.db"
     # Captures kept in that file; the oldest are dropped past this (PRD §32).
     max_stored_jobs: int = 50

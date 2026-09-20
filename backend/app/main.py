@@ -6,7 +6,7 @@ import shutil
 import sys
 import tempfile
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,14 +49,19 @@ def _demo_flows() -> list[dict]:
 
 app = FastAPI(title="NetSentinel AI API", version="0.2.0")
 
+# The ByteGuard vite dev server picks 3000 or 5173 depending on the port; a
+# deployment adds its own via CORS_ORIGINS.
+CORS_ORIGINS = [
+    "http://localhost:3000", "http://127.0.0.1:3000",
+    "http://localhost:5173", "http://127.0.0.1:5173",
+] + [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    # The ByteGuard vite dev server picks 3000 or 5173 depending on the port.
-    allow_origins=[
-        "http://localhost:3000", "http://127.0.0.1:3000",
-        "http://localhost:5173", "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
+    allow_origins=CORS_ORIGINS,
+    # A wildcard origin and credentialed CORS are mutually exclusive per spec,
+    # and browsers reject the combination outright.
+    allow_credentials="*" not in CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -258,6 +263,65 @@ def load_demo():
     return _job("demo", f"Demo traffic analysed ({len(flows)} flows)", s)
 
 
+@app.post("/api/agent/ingest", response_model=AnalysisJob)
+async def agent_ingest(request: Request):
+    """Live flows from a site's capture agent (capture_agent.py, netsentinel.js).
+
+    The agents batch events into the same flow shape the pcap path produces, so
+    this is analyse_flows + _job with the file plumbing skipped. Unlike a pcap
+    upload the batch is *merged* into the working set: one flush is a few
+    seconds of traffic, and replacing on every flush would leave the dashboard
+    showing only the last interval.
+    """
+    # The browser agent sends this via navigator.sendBeacon, which can only set
+    # a CORS-safelisted Content-Type — so the body is read and parsed directly
+    # rather than declared as a JSON model, which would 422 on text/plain.
+    try:
+        payload = json.loads(await request.body())
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail=f"Body must be JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+
+    # Shared-secret gate at the trust boundary: without it, anyone who can
+    # reach the API can push flows into the store. sendBeacon cannot set
+    # headers, so the body carries the key for the browser agent.
+    if settings.agent_api_key:
+        presented = payload.get("api_key") or request.headers.get("X-API-Key")
+        if presented != settings.agent_api_key:
+            raise HTTPException(status_code=401, detail="Invalid agent API key")
+
+    flows = payload.get("flows")
+    if not isinstance(flows, list) or not flows:
+        raise HTTPException(status_code=400, detail="Provide a non-empty 'flows' list")
+    if len(flows) > 10000:
+        raise HTTPException(status_code=413, detail="Batch exceeds 10000 flows")
+
+    # A browser cannot see its own address, so it sends none and the socket
+    # answers instead. Without a source the flow has no edge in the graph.
+    peer = request.client.host if request.client else "unknown"
+    for flow in flows:
+        if isinstance(flow, dict) and not flow.get("source_ip"):
+            flow["source_ip"] = peer
+
+    client_id = str(payload.get("client_id") or "website-agent")
+    job_id = f"AGENT-{client_id}"
+    # Merge only into this agent's own working set. The first flush clears
+    # whatever was there — preloaded demo traffic or someone else's capture —
+    # because mixing those with live data would misreport both (PRD §2).
+    first = store.current_job_id != job_id
+    s = analyse_flows(flows, capture_id=job_id, replace=first)
+    return _job(
+        client_id,
+        f"Merged {len(flows)} live flows from agent {client_id!r}"
+        f" ({s['total_flows']} in the working set)",
+        s,
+        # One row per agent, reused on every flush. A new job per flush would
+        # rotate real captures out of a 50-row history within minutes.
+        job_id=job_id,
+    )
+
+
 @app.post("/api/analyze/pcap", response_model=AnalysisJob)
 async def analyze_pcap(file: UploadFile = File(...)):
     if not file.filename or not file.filename.lower().endswith((".pcap", ".pcapng")):
@@ -315,9 +379,9 @@ def _coverage_hint(capture: dict) -> str:
             f" ({reasons}); findings cover that portion only")
 
 
-def _job(filename: str, message: str, s: dict) -> dict:
+def _job(filename: str, message: str, s: dict, job_id: str | None = None) -> dict:
     job = {
-        "job_id": str(uuid4()),
+        "job_id": job_id or str(uuid4()),
         # Basename only — the same rule the upload path applies to the temp
         # file (§47). It matters more here now that job history is durable and
         # rendered by the UI: an unsanitized name used to die with the process.
