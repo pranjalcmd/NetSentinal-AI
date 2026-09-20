@@ -253,30 +253,33 @@ export async function getSensorMetrics(id: string): Promise<SensorMetrics> {
 
 export async function getCaptures(filters?: Partial<ListFilters>): Promise<Capture[]> {
   try {
-    const rawJobs = await fetch('http://localhost:8000/api/jobs', { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
-    if (Array.isArray(rawJobs) && rawJobs.length > 0) {
-      return rawJobs.map((j: any) => ({
-        id: j.job_id || `CAP-${j.filename}`,
-        type: 'AUTO_PRESERVED',
-        status: j.status === 'complete' ? 'READY' : j.status === 'running' ? 'RECORDING' : 'ANALYZED',
-        sensorId: 'SNS-FASTAPI-01',
-        sensorName: 'CORE-PIPELINE-SENSOR-01',
-        startTime: j.created_at || new Date().toISOString(),
-        duration: 2400,
-        sizeBytes: 1024 * 1024 * 684,
-        triggerIds: ['TRG-883'],
-        sha256: 'a3f4e8b912c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0',
-        customerId: 'CUST-001',
-        engagementId: 'ENG-001',
-        filename: j.filename || 'network_capture.pcap',
-        uploadedAt: j.created_at || new Date().toISOString(),
-        metadata: {
-          packets: (j.summary?.total_flows || 150) * 180,
-          flows: j.summary?.total_flows || 150,
-          hosts: 24,
-          protocols: ['TLS', 'DNS', 'HTTP', 'SSH'],
-        }
-      }))
+    const res = await fetch('http://localhost:8000/api/jobs', { cache: 'no-store' });
+    if (res.ok) {
+      const rawJobs = await res.json();
+      if (Array.isArray(rawJobs)) {
+        return rawJobs.map((j: any) => ({
+          id: j.job_id || `CAP-${j.filename}`,
+          type: 'AUTO_PRESERVED',
+          status: j.status === 'complete' ? 'READY' : j.status === 'running' ? 'RECORDING' : 'ANALYZED',
+          sensorId: 'SNS-FASTAPI-01',
+          sensorName: 'CORE-PIPELINE-SENSOR-01',
+          startTime: j.created_at || new Date().toISOString(),
+          duration: 2400,
+          sizeBytes: 1024 * 1024 * 684,
+          triggerIds: [],
+          sha256: 'a3f4e8b912c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0',
+          customerId: 'CUST-001',
+          engagementId: 'ENG-001',
+          filename: j.filename || 'network_capture.pcap',
+          uploadedAt: j.created_at || new Date().toISOString(),
+          metadata: {
+            packets: (j.summary?.total_flows || 0) * 180,
+            flows: j.summary?.total_flows || 0,
+            hosts: 0,
+            protocols: ['TLS', 'DNS', 'HTTP', 'SSH'],
+          }
+        }));
+      }
     }
   } catch (_e) {}
 
