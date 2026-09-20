@@ -141,7 +141,7 @@ export default function NetworkMeshPage() {
             <select
               value={severityFilter}
               onChange={(e) => setSeverityFilter(e.target.value)}
-              className="bg-black border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none"
+              className="glass rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none"
             >
               <option value="all">All Severities</option>
               <option value="critical">Critical</option>
@@ -159,7 +159,7 @@ export default function NetworkMeshPage() {
               placeholder="Search IP / Host..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-black border border-white/10 rounded-lg pl-8 pr-3 py-1 text-xs text-zinc-200 focus:outline-none w-36"
+              className="glass rounded-lg pl-8 pr-3 py-1 text-xs text-zinc-200 focus:outline-none w-36"
             />
           </div>
 

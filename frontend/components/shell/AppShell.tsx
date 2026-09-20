@@ -21,6 +21,7 @@ import { ToastContainer } from './ToastContainer';
 import { CommandPalette } from './CommandPalette';
 import { AICopilotWidget } from '../ai/AICopilotWidget';
 import { useBackendStatus } from '@/lib/useApi';
+import { AiSummaryBar } from './AiSummaryBar';
 
 export type ToastVariant = 'info' | 'success' | 'warning' | 'error';
 
@@ -158,6 +159,9 @@ export function AppShell({ children }: AppShellProps) {
               Backend unreachable — every figure below is bundled sample data, not this environment.
             </div>
           )}
+
+          {/* Pinned above every page: one AI pass over the loaded capture. */}
+          <AiSummaryBar />
 
           {/* Core Content Area */}
           <main className="flex-1 overflow-y-auto bg-[#0A0E14]">

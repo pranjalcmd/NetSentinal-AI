@@ -44,7 +44,7 @@ export default function HostsPage() {
       </div>
 
       {/* TABLE */}
-      <div className="border border-[#1E293B]/60 bg-[#060910] p-4">
+      <div className="glass p-4">
         <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-[#7C8798] border-b border-[#1E293B]/60 pb-2 mb-3">
           <span>ENDPOINT INVENTORY</span>
           <span>REAL-TIME TRAFFIC PROFILES</span>

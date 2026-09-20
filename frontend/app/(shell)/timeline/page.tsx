@@ -34,7 +34,7 @@ export default function TimelinePage() {
       </div>
 
       {/* TIMELINE LIST */}
-      <div className="border border-[#1E293B]/60 bg-[#060910] p-6 space-y-6">
+      <div className="glass p-6 space-y-6">
         <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-[#7C8798] border-b border-[#1E293B]/60 pb-2">
           <span>EVENT CHRONOLOGY INDEX</span>
           <span>REAL-TIME STREAMING LOG</span>
@@ -51,7 +51,7 @@ export default function TimelinePage() {
                   'bg-[#3DD9C4] border-[#3DD9C4]'
                 }`} />
 
-                <div className="border border-[#1E293B]/60 bg-[#090d16] p-3 space-y-1.5 hover:border-[#3DD9C4]/40 transition-colors">
+                <div className="glass p-3 space-y-1.5 hover:border-[#3DD9C4]/40 transition-colors">
                   <div className="flex items-center justify-between text-[0.7rem]">
                     <div className="flex items-center gap-2">
                       <span className={`px-1.5 py-0.2 text-[0.6rem] uppercase tracking-wider border ${

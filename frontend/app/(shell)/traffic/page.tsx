@@ -66,7 +66,7 @@ export default function TrafficExplorerPage() {
 
       {/* MAIN CONTENT: TABLE & INSPECTION DRAWER */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 border border-[#1E293B]/60 bg-[#060910] p-4">
+        <div className="lg:col-span-2 glass p-4">
           <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-[#7C8798] border-b border-[#1E293B]/60 pb-2 mb-3">
             <span>RECONSTRUCTED FLOW SESSIONS</span>
             <span>{filteredFlows.length} SESSIONS MATCHED</span>
@@ -113,7 +113,7 @@ export default function TrafficExplorerPage() {
         </div>
 
         {/* SIDE DRAWER */}
-        <div className="border border-[#1E293B]/60 bg-[#060910] p-4 space-y-4">
+        <div className="glass p-4 space-y-4">
           <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-[#7C8798] border-b border-[#1E293B]/60 pb-2">
             <span>SESSION TELEMETRY INSPECTOR</span>
             <span>{selectedFlow ? selectedFlow.id : 'SELECT ROW'}</span>

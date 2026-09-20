@@ -226,6 +226,9 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit].rstrip() + f"… (+{len(text) - limit} chars)"
 
 
+MAX_KEY_ATTEMPTS = 3
+
+
 def _api_keys() -> list[str]:
     """AI_API_KEY, split on commas so a pool of keys can be supplied."""
     return [k.strip() for k in (settings.ai_api_key or "").split(",") if k.strip()]
@@ -401,7 +404,10 @@ class AIService:
             self.last_error = f"unknown AI_PROVIDER {settings.ai_provider!r}"
             print(f"[ai_service] {self.last_error}, using mock")
             return None
-        attempts = max(1, len(_api_keys()))
+        # Capped, not the whole pool: keys from one project share a quota, so
+        # walking all of them on a 429 just stalls the caller for a minute to
+        # reach the same fallback. Two spares is enough to skip a spent key.
+        attempts = max(1, min(len(_api_keys()), MAX_KEY_ATTEMPTS))
         for attempt in range(attempts):
             try:
                 parsed = json.loads(await adapter(prompt, schema))

@@ -155,7 +155,7 @@ export default function AIAssistantPage() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
           placeholder="Ask AI analyst to explain anomalies, beaconing, or telemetry evidence..."
-          className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#3DD9C4]"
+          className="flex-1 glass rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#3DD9C4]"
         />
         <button
           onClick={handleSend}

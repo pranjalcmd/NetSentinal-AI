@@ -100,7 +100,7 @@ export default function ThreatHuntPage() {
       </div>
 
       {/* QUERY CONSOLE */}
-      <div className="border border-[#1E293B]/60 bg-[#060910] p-4 space-y-4">
+      <div className="glass p-4 space-y-4">
         <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-[#7C8798] border-b border-[#1E293B]/60 pb-2">
           <span>HUNTING QUERY EDITOR (TELEMETRY DSL)</span>
           <span>ENTER EXPRESSION</span>
@@ -128,7 +128,7 @@ export default function ThreatHuntPage() {
       </div>
 
       {/* RESULTS TABLE */}
-      <div className="border border-[#1E293B]/60 bg-[#060910] p-4">
+      <div className="glass p-4">
         <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-[#7C8798] border-b border-[#1E293B]/60 pb-2 mb-3">
           <span>MATCHED FLOW RESULTS</span>
           <span>{results.length} MATCHING RECORDS FOUND</span>

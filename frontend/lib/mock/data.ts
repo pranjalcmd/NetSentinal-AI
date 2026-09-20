@@ -1913,7 +1913,7 @@ export const MOCK_NOTIFICATIONS: AppNotification[] = [
     message: 'ACME-BRANCH-05 has not reported a heartbeat in 4 minutes. Capture engine offline. 7 uploads queued.',
     timestamp: '2026-09-16T15:08:14Z',
     read: false,
-    link: '/health',
+    link: '/overview',
   },
   {
     id: 'NOTIF-004',
@@ -1931,7 +1931,7 @@ export const MOCK_NOTIFICATIONS: AppNotification[] = [
     message: 'DPI Engine queue depth at 1,840 items. Processing CAP-1042 (1.84 GB). Expected to clear in ~8 minutes.',
     timestamp: '2026-09-16T15:05:12Z',
     read: true,
-    link: '/health',
+    link: '/overview',
   },
   {
     id: 'NOTIF-006',

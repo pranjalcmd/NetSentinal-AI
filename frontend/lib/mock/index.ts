@@ -81,7 +81,7 @@ export const MOCK_NOTIFICATIONS: AppNotification[] = [
     message: 'SNS-041 reporting 20% packet loss. Check interface configuration.',
     timestamp: '2026-09-17T15:30:00Z',
     read: false,
-    link: '/health',
+    link: '/overview',
   },
   {
     id: 'notif-004',

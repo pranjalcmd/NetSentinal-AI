@@ -131,7 +131,7 @@ export default function HostForensicsPage({ params }: { params?: Promise<{ hostI
 
       {/* Overview Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Host Risk Score</span>
           <div className="mt-1">
             <RiskBadge score={host.riskScore} />
@@ -139,31 +139,31 @@ export default function HostForensicsPage({ params }: { params?: Promise<{ hostI
           <div className="text-[11px] text-slate-500 mt-2">Composite behavioral risk</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Role / Function</span>
           <div className="text-sm font-semibold text-white mt-1 capitalize font-mono">{host.role ?? 'Workstation'}</div>
           <div className="text-[11px] text-slate-500 mt-1">Monitored LAN segment</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Total Flows</span>
           <div className="text-2xl font-bold font-mono text-cyan-300 mt-1">{host.flows.toLocaleString()}</div>
           <div className="text-[11px] text-slate-500 mt-1">Reconstructed sessions</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Bytes Outbound</span>
           <div className="text-xl font-bold font-mono text-orange-400 mt-1">{formatBytes(host.bytesOut)}</div>
           <div className="text-[11px] text-slate-500 mt-1">High volume anomaly</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Bytes Inbound</span>
           <div className="text-xl font-bold font-mono text-emerald-400 mt-1">{formatBytes(host.bytesIn)}</div>
           <div className="text-[11px] text-slate-500 mt-1">Normal baseline</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Associated Findings</span>
           <div className="text-2xl font-bold font-mono text-red-400 mt-1">{findings.length} Findings</div>
           <div className="text-[11px] text-slate-500 mt-1">Active detections</div>
@@ -175,7 +175,7 @@ export default function HostForensicsPage({ params }: { params?: Promise<{ hostI
         {/* Left Column (1 col): Connected Destinations & Findings */}
         <div className="space-y-6">
           {/* Associated Findings */}
-          <div className="p-5 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-4">
+          <div className="p-5 rounded-xl glass backdrop-blur-sm space-y-4">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-red-400" />
@@ -208,7 +208,7 @@ export default function HostForensicsPage({ params }: { params?: Promise<{ hostI
           </div>
 
           {/* External Connected Destinations */}
-          <div className="p-5 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-4">
+          <div className="p-5 rounded-xl glass backdrop-blur-sm space-y-4">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
               <Globe className="w-4 h-4 text-cyan-400" />
               Connected Destinations ({destinations.length})
@@ -254,7 +254,7 @@ export default function HostForensicsPage({ params }: { params?: Promise<{ hostI
 
         {/* Right Column (2 cols): Flows Table */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-4">
+          <div className="p-6 rounded-xl glass backdrop-blur-sm space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div>
                 <h2 className="text-base font-bold text-white flex items-center gap-2">

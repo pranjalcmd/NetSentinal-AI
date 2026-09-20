@@ -164,7 +164,7 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
 
       {/* Incident Status & Metadata Header */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Incident Risk</span>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-bold font-mono text-red-400">{incident.riskScore}</span>
@@ -173,7 +173,7 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
           <div className="text-[11px] text-red-400/80 mt-1 font-mono">Critical Security Priority</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Correlation Confidence</span>
           <div className="text-3xl font-bold font-mono text-teal-300">
             {Math.round(incident.confidence * 100)}%
@@ -183,14 +183,14 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Current Lifecycle Status</span>
           <div className="mt-2">
             <StatusBadge status={currentStatus} />
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Assigned Consultant</span>
           <div className="text-sm font-bold text-white mt-1 flex items-center gap-1.5">
             <User className="w-4 h-4 text-cyan-400" />
@@ -199,13 +199,13 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
           <div className="text-[11px] text-slate-400">Lead IR Investigator</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Affected Hosts</span>
           <div className="text-2xl font-bold font-mono text-white mt-1">{incident.hostIds.length} Hosts</div>
           <div className="text-[11px] text-slate-400 font-mono">FIN-WS-014, DEV-WS-028</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Total Correlated Findings</span>
           <div className="text-2xl font-bold font-mono text-orange-400 mt-1">{incident.findingIds.length} Detections</div>
           <div className="text-[11px] text-slate-400">Cross-sensor correlated</div>
@@ -244,7 +244,7 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
         {/* Left 2 Cols: Attack Story Narrative Timeline & Tables */}
         <div className="lg:col-span-2 space-y-6">
           {/* Narrative Attack Story Timeline */}
-          <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-5">
+          <div className="p-6 rounded-xl glass backdrop-blur-sm space-y-5">
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Activity className="w-5 h-5 text-cyan-400" />
               Narrative Incident Story Timeline
@@ -286,7 +286,7 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
           </div>
 
           {/* Correlated Hosts Table */}
-          <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-4">
+          <div className="p-6 rounded-xl glass backdrop-blur-sm space-y-4">
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Server className="w-5 h-5 text-cyan-400" />
               Correlated Internal Hosts
@@ -361,7 +361,7 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
         {/* Right Col: Status Panel & Analyst Notes */}
         <div className="space-y-6">
           {/* Status Lifecycle Transition Panel */}
-          <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-4">
+          <div className="p-6 rounded-xl glass backdrop-blur-sm space-y-4">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-cyan-400" />
               Incident Lifecycle Triage
@@ -394,7 +394,7 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
           </div>
 
           {/* Analyst Notes */}
-          <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-4">
+          <div className="p-6 rounded-xl glass backdrop-blur-sm space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-cyan-400" />

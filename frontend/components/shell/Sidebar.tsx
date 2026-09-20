@@ -35,10 +35,9 @@ const NAV = [
   },
   {
     group: 'Explain',
-    sub: 'evidence & system state',
+    sub: 'ask the analyst',
     items: [
-      { label: 'AI Assistant',  href: '/ai' },
-      { label: 'System Health', href: '/health' },
+      { label: 'AI Assistant', href: '/ai' },
     ],
   },
 ];

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import {
   getHealth,
+  HealthResponse,
   getDashboard,
   getNetworkGraph,
   getAlerts,
@@ -47,6 +48,7 @@ export default function SOCOverviewDashboard() {
   const [alerts, setAlerts] = useState<CanonicalAlert[]>([]);
   const [jobs, setJobs] = useState<AnalysisJob[]>([]);
   const [summary, setSummary] = useState<Record<string, any> | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string>('demo');
 
   // Filters
@@ -98,9 +100,10 @@ export default function SOCOverviewDashboard() {
       getAlerts().catch(() => []),
       getJobs().catch(() => []),
       getDashboard().catch(() => null),
-    ]).then(([g, f, a, j, d]) => {
+      getHealth().catch(() => null),
+    ]).then(([g, f, a, j, d, h]) => {
       if (!live) return;
-      setRawGraph(g); setFlows(f); setAlerts(a); setJobs(j); setSummary(d);
+      setRawGraph(g); setFlows(f); setAlerts(a); setJobs(j); setSummary(d); setHealth(h);
       setLastRefreshed(new Date().toLocaleTimeString());
       setLoading(false);
     });
@@ -170,6 +173,16 @@ export default function SOCOverviewDashboard() {
     return { label: `${Math.round(mins / 60)}h ago`, stale: true };
   }, [jobs, now]);
 
+  const protocolMix = useMemo(() => {
+    const dist: Record<string, number> = summary?.protocol_distribution ?? {};
+    const total = Object.values(dist).reduce((a, b) => a + b, 0);
+    if (!total) return [];
+    return Object.entries(dist)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([proto, n]) => ({ proto, pct: Math.round((n / total) * 100) }));
+  }, [summary]);
+
   const topIncident = alerts[0];
   const topRiskyDestination = useMemo(() => {
     return graph.nodes.filter((n) => n.kind === 'external').sort((a, b) => b.risk - a.risk)[0];
@@ -183,7 +196,7 @@ export default function SOCOverviewDashboard() {
     <div className="min-h-screen bg-[#04060c] text-white font-sans p-4 sm:p-6 space-y-6">
       
       {/* ─── Header: SOC Workstation Bar (PRD Section 4) ──────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-zinc-950 border border-white/10 shadow-2xl">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl glass shadow-2xl">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-[#3DD9C4]/10 border border-[#3DD9C4]/30 flex items-center justify-center text-[#3DD9C4]">
             <Activity className="w-5 h-5 stroke-[2.2]" />
@@ -257,7 +270,7 @@ export default function SOCOverviewDashboard() {
           { label: 'ACTIVE INCIDENTS', val: kpis.totalIncidents, sub: 'Correlated alerts', color: 'text-red-400' },
           { label: 'FRESHNESS', val: freshness.label, sub: 'Last analysis', color: freshness.stale ? 'text-amber-400' : 'text-[#3DD9C4]' },
         ].map((kpi, idx) => (
-          <div key={idx} className="p-4 rounded-xl bg-zinc-950 border border-white/10 flex flex-col justify-between">
+          <div key={idx} className="p-4 rounded-xl glass flex flex-col justify-between">
             <span className="text-[11px] font-mono text-zinc-500 tracking-wider">{kpi.label}</span>
             <div className={`text-2xl font-extrabold font-mono mt-1 ${kpi.color}`}>{kpi.val}</div>
             <span className="text-[10px] text-zinc-500 mt-1">{kpi.sub}</span>
@@ -270,7 +283,7 @@ export default function SOCOverviewDashboard() {
         
         {/* Main Area: Connected 2D/3D Network Mesh (PRD Section 4) */}
         <div className="lg:col-span-8 space-y-4">
-          <div className="p-4 rounded-2xl bg-black border border-white/10 relative">
+          <div className="p-4 rounded-2xl glass relative">
             
             {/* Filter Toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10 text-xs font-mono">
@@ -336,7 +349,7 @@ export default function SOCOverviewDashboard() {
         <div className="lg:col-span-4 space-y-4">
           
           {/* Top Active Incident */}
-          <div className="p-4 rounded-xl bg-zinc-950 border border-white/10 space-y-2">
+          <div className="p-4 rounded-xl glass space-y-2">
             <span className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider block">TOP ACTIVE INCIDENT</span>
             {topIncident ? (
               <div className="p-3 rounded-lg bg-red-950/30 border border-red-500/30 space-y-1">
@@ -356,10 +369,10 @@ export default function SOCOverviewDashboard() {
           </div>
 
           {/* Top Risky Destination */}
-          <div className="p-4 rounded-xl bg-zinc-950 border border-white/10 space-y-2">
+          <div className="p-4 rounded-xl glass space-y-2">
             <span className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider block">TOP RISKY DESTINATION</span>
             {topRiskyDestination ? (
-              <div className="p-3 rounded-lg bg-zinc-900 border border-white/10 flex items-center justify-between">
+              <div className="p-3 rounded-lg glass flex items-center justify-between">
                 <div>
                   <div className="text-xs font-bold text-white font-mono">{topRiskyDestination.label}</div>
                   <div className="text-[10px] text-zinc-400">External Endpoint</div>
@@ -374,10 +387,10 @@ export default function SOCOverviewDashboard() {
           </div>
 
           {/* Top Noisy Host */}
-          <div className="p-4 rounded-xl bg-zinc-950 border border-white/10 space-y-2">
+          <div className="p-4 rounded-xl glass space-y-2">
             <span className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider block">TOP NOISY HOST</span>
             {topNoisyHost ? (
-              <div className="p-3 rounded-lg bg-zinc-900 border border-white/10 flex items-center justify-between">
+              <div className="p-3 rounded-lg glass flex items-center justify-between">
                 <div>
                   <div className="text-xs font-bold text-white font-mono">{topNoisyHost.label}</div>
                   <div className="text-[10px] text-zinc-400">Internal Asset</div>
@@ -432,7 +445,7 @@ export default function SOCOverviewDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-white/10">
         
         {/* Recent Security Alerts */}
-        <div className="p-4 rounded-xl bg-zinc-950 border border-white/10 space-y-3">
+        <div className="p-4 rounded-xl glass space-y-3">
           <div className="flex items-center justify-between text-xs font-mono">
             <span className="font-bold text-white flex items-center gap-1.5">
               <ShieldAlert className="w-4 h-4 text-amber-400" />
@@ -459,7 +472,7 @@ export default function SOCOverviewDashboard() {
         </div>
 
         {/* Protocol Mix Summary */}
-        <div className="p-4 rounded-xl bg-zinc-950 border border-white/10 space-y-3">
+        <div className="p-4 rounded-xl glass space-y-3">
           <div className="flex items-center justify-between text-xs font-mono">
             <span className="font-bold text-white flex items-center gap-1.5">
               <BarChart2 className="w-4 h-4 text-[#3DD9C4]" />
@@ -469,25 +482,44 @@ export default function SOCOverviewDashboard() {
           </div>
 
           <div className="space-y-3 pt-2">
-            {[
-              { proto: 'HTTPS / TLS 1.3', pct: 64, color: 'bg-[#3DD9C4]' },
-              { proto: 'DNS Query (UDP/53)', pct: 22, color: 'bg-blue-500' },
-              { proto: 'SSH / Encrypted Tunnel', pct: 9, color: 'bg-amber-500' },
-              { proto: 'Unclassified / Other', pct: 5, color: 'bg-zinc-600' },
-            ].map((p, idx) => (
-              <div key={idx} className="space-y-1 text-xs font-mono">
+            {protocolMix.length === 0 ? (
+              <p className="text-xs text-zinc-600">No protocols identified yet.</p>
+            ) : protocolMix.map((p) => (
+              <div key={p.proto} className="space-y-1 text-xs font-mono">
                 <div className="flex justify-between text-zinc-400">
                   <span>{p.proto}</span>
                   <span className="text-white font-bold">{p.pct}%</span>
                 </div>
                 <div className="w-full bg-zinc-900 rounded-full h-2 overflow-hidden">
-                  <div className={`${p.color} h-full rounded-full`} style={{ width: `${p.pct}%` }} />
+                  <div className="bg-[#3DD9C4] h-full rounded-full" style={{ width: `${p.pct}%` }} />
                 </div>
               </div>
             ))}
           </div>
         </div>
 
+      </div>
+
+      {/* System state — the few real facts the standalone health page carried. */}
+      <div className="glass px-6 py-4 flex flex-wrap items-center gap-x-10 gap-y-3 font-mono text-[11px]">
+        <span className="eyebrow">System</span>
+        {[
+          ['API', health ? health.status : 'unreachable'],
+          ['DPI engine', health?.dpi_mode ?? '—'],
+          ['ML model', health ? (health.ml_trained_model ? 'trained' : 'heuristic only') : '—'],
+          ['AI provider', health ? (health.ai_key_configured ? health.ai_provider : 'mock (no key)') : '—'],
+          ['Flows in store', health?.flows_loaded ?? '—'],
+        ].map(([k, v]) => (
+          <span key={String(k)} className="flex items-center gap-2">
+            <span className="text-zinc-600">{k}</span>
+            <span className="text-zinc-200">{String(v)}</span>
+          </span>
+        ))}
+        {health?.ai_last_error && (
+          <span className="text-amber-400/80 max-w-xl truncate" title={health.ai_last_error}>
+            last AI error: {health.ai_last_error}
+          </span>
+        )}
       </div>
 
     </div>

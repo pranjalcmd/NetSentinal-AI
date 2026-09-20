@@ -121,25 +121,25 @@ export default function NetworkServicesPage() {
 
       {/* Metrics Row */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Total Monitored Services</span>
           <div className="text-2xl font-bold font-mono text-white mt-1">{totalServices} Services</div>
           <div className="text-[11px] text-slate-500 mt-1">Across monitored hosts</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Total Service Flows</span>
           <div className="text-2xl font-bold font-mono text-cyan-300 mt-1">{totalFlows.toLocaleString()}</div>
           <div className="text-[11px] text-slate-500 mt-1">Total connections established</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Transport Mix</span>
           <div className="text-sm font-bold text-slate-200 mt-2 font-mono">{transportMix || '—'}</div>
           <div className="text-[11px] text-slate-500 mt-1">observed across services</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm">
+        <div className="p-4 rounded-xl glass backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Busiest Ports</span>
           <div className="text-xs font-mono font-bold text-emerald-400 mt-2">
             {busiestPorts.length
@@ -151,7 +151,7 @@ export default function NetworkServicesPage() {
       </div>
 
       {/* Filter Bar */}
-      <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-4 rounded-xl glass backdrop-blur-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="relative flex-1 min-w-[280px]">
           <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-slate-400" />
           <input
