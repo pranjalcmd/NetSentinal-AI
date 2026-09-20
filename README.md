@@ -1,6 +1,6 @@
-# NetSentinel AI
+# PRISM — Explainable Threat Analytics & Security Advisory
 
-AI-assisted network traffic intelligence. Takes a packet capture, identifies
+PRISM refracts complex network traffic into clear, explainable threat intelligence. Takes a packet capture, identifies
 the application behind every flow with deep packet inspection, scores each flow
 with a transparent rule engine **and** a DPI-aware ML classifier, and serves the
 result to a SOC-style React frontend.

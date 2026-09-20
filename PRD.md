@@ -1,16 +1,16 @@
-# NetSentinel AI — In-Depth Product Requirements & Codebase Specification
+# PRISM — Threat Analytics & Security Advisory Platform
 
 **Document type:** Hackathon implementation PRD / engineering handoff / UI specification  
 **Version:** 1.0  
 **Status:** Build-ready MVP + stretch scope  
 **Primary audience:** 4-person hackathon engineering team, UI designer, presenter, judges-facing team members  
-**Product:** NetSentinel AI — AI-assisted network traffic intelligence platform
+**Product:** PRISM — Threat Analytics & Security Advisory Platform
 
 ---
 
 # 0. Executive Summary
 
-NetSentinel AI is a security-analysis web application that turns authorized network captures into understandable, prioritized security findings.
+PRISM is a threat analytics and security advisory platform that refracts authorized network captures into understandable, prioritized security findings.
 
 The product has four technical layers:
 
