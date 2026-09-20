@@ -1,78 +1,116 @@
 """Entity/relationship views over the analysed flows.
 
-The ByteGuard frontend speaks in entities and links, not flows, so this
-projects the flow table onto a graph: every IP is a node, every flow an edge.
+The frontend speaks in entities and links, not flows, so this projects the flow
+table onto a graph. It is a *projection*: nodes and edges are derived from
+store.flows on every call and never kept as a second editable dataset (PRD §6).
+
+One edge is one (source, destination, application) triple, carrying the ids of
+every flow aggregated into it. Aggregating per flow instead would emit a
+parallel edge per connection and make byte totals meaningless on a busy host.
 """
 from collections import defaultdict, deque
 
 from detection.context import is_internal
+from detection.scoring import SEVERITY_ORDER
 
 from backend.app.services.store import store
 
 
-def _risk_by_ip() -> dict[str, int]:
-    """Highest alert score seen on any flow touching each IP."""
-    risk: dict[str, int] = defaultdict(int)
-    for alert in store.alerts.values():
-        flow = store.flows.get(alert["flow_id"])
-        if not flow:
-            continue
-        score = int(alert.get("risk_score", 0))
-        for ip in (flow.get("source_ip"), flow.get("destination_ip")):
-            if ip:
-                risk[ip] = max(risk[ip], score)
-    return risk
-
-
 def build_graph() -> dict:
-    risk = _risk_by_ip()
-    flagged_flows = {a["flow_id"] for a in store.alerts.values()}
+    """Nodes and aggregated edges for the current working set.
+
+    Invariants the callers and tests rely on (PRD §6): every edge endpoint
+    exists in `nodes`, every edge carries at least one real `flow_id`, and an
+    edge's bytes/packets equal the sum over the flows it names.
+    """
+    alerts = {a["flow_id"]: a for a in store.alerts.values()}
 
     nodes: dict[str, dict] = {}
-    links: list[dict] = []
+    edges: dict[tuple, dict] = {}
+    inbound: dict[str, int] = defaultdict(int)
+    outbound: dict[str, int] = defaultdict(int)
 
     for flow in store.flows.values():
         src, dst = flow.get("source_ip"), flow.get("destination_ip")
-        for ip in (src, dst):
-            if ip and ip not in nodes:
-                nodes[ip] = {
+        if not src or not dst:
+            continue    # half a flow cannot be an edge; PRD §6 forbids inventing the other end
+
+        alert = alerts.get(flow.get("flow_id"))
+        risk = int(alert.get("risk_score", 0)) if alert else 0
+        severity = alert.get("severity") if alert else None
+
+        for ip in ((src,) if src == dst else (src, dst)):
+            node = nodes.get(ip)
+            if node is None:
+                node = nodes[ip] = {
                     "id": ip,
                     "name": ip,
                     "label": ip,
                     "type": "person" if is_internal(ip) else "organization",
                     "kind": "internal" if is_internal(ip) else "external",
-                    "risk": risk.get(ip, 0),
+                    "risk": 0,
+                    "flow_count": 0,
                     "central": False,
                 }
-        if src and dst:
-            links.append({
+            node["risk"] = max(node["risk"], risk)
+            node["flow_count"] += 1
+
+        outbound[src] += 1
+        inbound[dst] += 1
+
+        application = flow.get("application") or "UNKNOWN"
+        edge = edges.get((src, dst, application))
+        if edge is None:
+            edge = edges[(src, dst, application)] = {
+                "id": f"{src}>{dst}>{application}",
                 "source": src,
                 "target": dst,
-                "suspicious": flow.get("flow_id") in flagged_flows,
-                "application": flow.get("application", "UNKNOWN"),
-                "flow_id": flow.get("flow_id"),
-            })
+                "application": application,
+                "flow_ids": [],
+                "bytes": 0,
+                "packets": 0,
+                "risk": 0,
+                "severity": None,
+                "suspicious": False,
+            }
+        edge["flow_ids"].append(flow["flow_id"])
+        edge["bytes"] += int(flow.get("bytes") or 0)
+        edge["packets"] += int(flow.get("packets") or 0)
+        edge["risk"] = max(edge["risk"], risk)
+        if SEVERITY_ORDER.get(severity, -1) > SEVERITY_ORDER.get(edge["severity"], -1):
+            edge["severity"] = severity
+        edge["suspicious"] = edge["suspicious"] or alert is not None
+
+    edge_list = list(edges.values())
+
+    # An internal address that only ever receives traffic is a service, not an
+    # operator's host — the one distinction the dashboard layout needs.
+    for node in nodes.values():
+        if node["kind"] == "internal" and inbound[node["id"]] and not outbound[node["id"]]:
+            node["kind"] = "service"
 
     # Mark the riskiest node so the force graph has a focal point.
     if nodes:
-        top = max(nodes.values(), key=lambda n: (n["risk"], _degree(n["id"], links)))
+        degree = _degrees(edge_list)
+        top = max(nodes.values(), key=lambda n: (n["risk"], degree[n["id"]]))
         top["central"] = True
 
-    return {"nodes": list(nodes.values()), "links": links}
+    return {"nodes": list(nodes.values()), "edges": edge_list}
 
 
-def _degree(node_id: str, links: list[dict]) -> int:
-    return sum(1 for l in links if l["source"] == node_id or l["target"] == node_id)
+def _degrees(edges: list[dict]) -> dict[str, int]:
+    degree: dict[str, int] = defaultdict(int)
+    for edge in edges:
+        degree[edge["source"]] += 1
+        degree[edge["target"]] += 1
+    return degree
 
 
 def build_entities() -> list[dict]:
     graph = build_graph()
-    links = graph["links"]
+    degree = _degrees(graph["edges"])
     return sorted(
-        (
-            {**node, "connections": _degree(node["id"], links)}
-            for node in graph["nodes"]
-        ),
+        ({**node, "connections": degree[node["id"]]} for node in graph["nodes"]),
         key=lambda n: (n["risk"], n["connections"]),
         reverse=True,
     )
@@ -92,33 +130,33 @@ def shortest_path(src: str, dst: str) -> dict | None:
         return {"path": [_node_step(nodes[src])], "hops": 0, "suspicious": 0}
 
     neighbours: dict[str, list[dict]] = defaultdict(list)
-    for link in graph["links"]:
-        neighbours[link["source"]].append(link)
-        neighbours[link["target"]].append(link)
+    for edge in graph["edges"]:
+        neighbours[edge["source"]].append(edge)
+        neighbours[edge["target"]].append(edge)
 
     queue = deque([(src, [src], [])])
     seen = {src}
     while queue:
-        current, path, edges = queue.popleft()
-        for link in neighbours[current]:
-            nxt = link["target"] if link["source"] == current else link["source"]
+        current, path, used = queue.popleft()
+        for edge in neighbours[current]:
+            nxt = edge["target"] if edge["source"] == current else edge["source"]
             if nxt in seen:
                 continue
             if nxt == dst:
                 full = path + [nxt]
-                used = edges + [link]
+                walked = used + [edge]
                 return {
                     "path": [_node_step(nodes[i]) for i in full],
                     "hops": len(full) - 1,
-                    "suspicious": sum(1 for e in used if e["suspicious"]),
+                    "suspicious": sum(1 for e in walked if e["suspicious"]),
                     "edges": [
                         {"source": e["source"], "target": e["target"],
                          "application": e["application"], "suspicious": e["suspicious"]}
-                        for e in used
+                        for e in walked
                     ],
                 }
             seen.add(nxt)
-            queue.append((nxt, path + [nxt], edges + [link]))
+            queue.append((nxt, path + [nxt], used + [edge]))
     return None
 
 

@@ -32,14 +32,52 @@ def test_graph_shape():
     assert {n["id"] for n in graph["nodes"]} == {
         "192.168.1.10", "192.168.1.11", "203.0.113.9", "10.0.0.5", "10.0.0.6"
     }
-    assert len(graph["links"]) == 3
+    assert len(graph["edges"]) == 3
     # RFC1918 -> person (internal), public -> organization. TYPE_META needs both.
     types = {n["id"]: n["type"] for n in graph["nodes"]}
     assert types["192.168.1.10"] == "person"
     assert types["203.0.113.9"] == "organization"
     # The telnet + risky-domain flow must be the one flagged.
-    assert [l["flow_id"] for l in graph["links"] if l["suspicious"]] == ["F-2"]
+    assert [e["flow_ids"] for e in graph["edges"] if e["suspicious"]] == [["F-2"]]
     assert sum(1 for n in graph["nodes"] if n["central"]) == 1
+
+
+def test_edges_reference_real_nodes_and_real_flows():
+    """PRD §6 graph invariants — the contract the mesh renders against."""
+    graph = build_graph()
+    node_ids = {n["id"] for n in graph["nodes"]}
+
+    for edge in graph["edges"]:
+        assert edge["source"] in node_ids and edge["target"] in node_ids
+        assert edge["flow_ids"], "an edge with no flow is an invented edge"
+        assert all(fid in store.flows for fid in edge["flow_ids"])
+        # Aggregated totals must equal the sum over the flows the edge names.
+        referenced = [store.flows[fid] for fid in edge["flow_ids"]]
+        assert edge["bytes"] == sum(f["bytes"] for f in referenced)
+        assert edge["packets"] == sum(f["packets"] for f in referenced)
+
+
+def test_edges_aggregate_flows_between_the_same_pair():
+    """Two flows on one route collapse into one edge that sums them."""
+    analyse_flows([
+        {**FLOWS[0], "flow_id": "G-1", "packets": 3, "bytes": 100},
+        {**FLOWS[0], "flow_id": "G-2", "packets": 7, "bytes": 400},
+    ])
+    try:
+        edges = build_graph()["edges"]
+        assert len(edges) == 1
+        assert sorted(edges[0]["flow_ids"]) == ["G-1", "G-2"]
+        assert edges[0]["packets"] == 10 and edges[0]["bytes"] == 500
+    finally:
+        setup_module()
+
+
+def test_internal_node_that_only_receives_is_a_service():
+    kinds = {n["id"]: n["kind"] for n in build_graph()["nodes"]}
+    assert kinds["192.168.1.10"] == "internal"   # initiates, never receives
+    assert kinds["192.168.1.11"] == "internal"   # both receives and initiates
+    assert kinds["10.0.0.6"] == "service"        # only ever a destination
+    assert kinds["203.0.113.9"] == "external"
 
 
 def test_risk_propagates_to_both_endpoints():

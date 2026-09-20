@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { getSensors, getIncidents, getFindings, getCaptures, getTriggers } from '@/lib/mock/services';
-import type { Sensor, Incident, Finding, Capture, Trigger } from '@/lib/types';
-import { formatBytes } from '@/lib/utils';
+import { api, apiBaseUrl, type Alert, type Entity, type Incident } from '@/lib/api';
+import { useApi, useNow } from '@/lib/useApi';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -25,6 +24,13 @@ const C = {
 const MONO: React.CSSProperties = { fontFamily: "'IBM Plex Mono', monospace" };
 const SANS: React.CSSProperties = { fontFamily: "'Inter', system-ui, sans-serif" };
 
+/** Analysis older than this is reported as stale, never as live (PRD §7). */
+const FRESH_FOR_MS = 5 * 60 * 1000;
+
+const SEV_COLOR: Record<string, string> = {
+  CRITICAL: C.critical, HIGH: C.high, MEDIUM: C.medium, LOW: C.low, INFO: C.muted,
+};
+
 // ─── Shared style helpers ─────────────────────────────────────────────────────
 function Label({ text }: { text: string }) {
   return (
@@ -40,25 +46,17 @@ function Label({ text }: { text: string }) {
 }
 
 function SevBadge({ sev }: { sev: string }) {
-  const map: Record<string, [string, string, string]> = {
-    critical: [C.critical, 'rgba(232,72,58,0.3)',  'rgba(232,72,58,0.06)'],
-    high:     [C.high,     'rgba(232,134,58,0.3)', 'rgba(232,134,58,0.06)'],
-    medium:   [C.medium,   'rgba(232,201,58,0.3)', 'rgba(232,201,58,0.06)'],
-    low:      [C.low,      'rgba(75,123,229,0.3)', 'rgba(75,123,229,0.06)'],
-    info:     [C.muted,    C.border,               'transparent'],
-  };
-  const [color, border, bg] = map[sev] ?? map.info;
+  const color = SEV_COLOR[sev] ?? C.muted;
   return (
     <span style={{
       ...MONO, fontSize: '0.52rem', fontWeight: 700,
       letterSpacing: '0.08em', color,
-      border: `1px solid ${border}`, background: bg,
+      border: `1px solid ${color}55`, background: `${color}10`,
       padding: '1px 5px',
-    }}>{sev.toUpperCase()}</span>
+    }}>{sev}</span>
   );
 }
 
-// Hairline table styles
 const TH: React.CSSProperties = {
   ...MONO, fontSize: '0.55rem', color: C.dim,
   letterSpacing: '0.08em', textTransform: 'uppercase',
@@ -73,22 +71,17 @@ const TD: React.CSSProperties = {
   borderBottom: `1px solid ${C.border2}`,
   verticalAlign: 'middle',
 };
-const TDA: React.CSSProperties = { ...TD, color: C.teal };    // accent (IDs)
-const TDP: React.CSSProperties = { ...TD, color: C.text };    // primary
+const TDA: React.CSSProperties = { ...TD, color: C.teal };
+const TDP: React.CSSProperties = { ...TD, color: C.text };
 
-// ─── Band / Section wrapper ───────────────────────────────────────────────────
 function Band({ children, first = false }: { children: React.ReactNode; first?: boolean }) {
   return (
-    <div style={{
-      padding: '2rem 2.5rem',
-      borderTop: first ? 'none' : `1px solid ${C.border}`,
-    }}>
+    <div style={{ padding: '2rem 2.5rem', borderTop: first ? 'none' : `1px solid ${C.border}` }}>
       {children}
     </div>
   );
 }
 
-// ─── Section h2 ──────────────────────────────────────────────────────────────
 function H2({ children }: { children: React.ReactNode }) {
   return (
     <h2 style={{
@@ -99,7 +92,6 @@ function H2({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ─── Ghost button / link ──────────────────────────────────────────────────────
 function GhostLink({ href, children, accent = false }: { href: string; children: React.ReactNode; accent?: boolean }) {
   const [hov, setHov] = useState(false);
   return (
@@ -121,10 +113,8 @@ function MoreLink({ href, children }: { href: string; children: React.ReactNode 
   const [hov, setHov] = useState(false);
   return (
     <Link href={href} style={{
-      ...MONO, fontSize: '0.6rem',
-      color: hov ? C.text : C.dim,
-      textDecoration: 'none', letterSpacing: '0.04em',
-      transition: 'color 0.12s',
+      ...MONO, fontSize: '0.6rem', color: hov ? C.text : C.dim,
+      textDecoration: 'none', letterSpacing: '0.04em', transition: 'color 0.12s',
     }}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
@@ -132,268 +122,352 @@ function MoreLink({ href, children }: { href: string; children: React.ReactNode 
   );
 }
 
+function Button({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <button onClick={onClick} style={{
+      ...MONO, fontSize: '0.6rem', cursor: 'pointer',
+      color: hov ? C.text : C.muted,
+      border: `1px solid ${hov ? C.muted : C.border}`,
+      background: 'transparent', padding: '3px 9px', letterSpacing: '0.04em',
+    }}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+    >{children}</button>
+  );
+}
+
+// ─── State surfaces ───────────────────────────────────────────────────────────
+
+function Note({ children, color = C.muted }: { children: React.ReactNode; color?: string }) {
+  return (
+    <div style={{
+      ...MONO, fontSize: '0.68rem', color,
+      border: `1px solid ${C.border}`, background: C.surface,
+      padding: '1rem 1.25rem', lineHeight: 1.7,
+    }}>{children}</div>
+  );
+}
+
+function Skeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div aria-busy="true" aria-label="Loading">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} style={{
+          height: '1.6rem', marginBottom: 6,
+          background: `linear-gradient(90deg, ${C.border2}, ${C.border}, ${C.border2})`,
+          opacity: 0.5,
+        }} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Failure gets the cause and a way back, never a silent zero (PRD §7).
+ * `compact` drops the recovery hint for sections below the first one, so a
+ * backend outage reads as one instruction rather than five copies of it.
+ */
+function Failure({ error, onRetry, compact = false }: {
+  error: { message: string; offline: boolean };
+  onRetry: () => void;
+  compact?: boolean;
+}) {
+  if (compact) {
+    return (
+      <Note>
+        <span style={{ color: C.high }}>Unavailable</span> — {error.message}{' '}
+        <button onClick={onRetry} style={{
+          ...MONO, fontSize: '0.68rem', color: C.teal, background: 'none',
+          border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline',
+        }}>retry</button>
+      </Note>
+    );
+  }
+  return (
+    <Note color={C.high}>
+      <div style={{ color: C.critical, marginBottom: '0.4rem' }}>
+        {error.offline ? 'Backend unreachable' : 'Request failed'}
+      </div>
+      <div style={{ color: C.muted, marginBottom: '0.8rem' }}>{error.message}</div>
+      {error.offline && (
+        <div style={{ color: C.dim, fontSize: '0.62rem', marginBottom: '0.8rem' }}>
+          Expected the API at {apiBaseUrl}. Start it with:
+          {' '}<span style={{ color: C.teal }}>uvicorn backend.app.main:app --port 8000</span>
+        </div>
+      )}
+      <Button onClick={onRetry}>Retry</Button>
+    </Note>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function OverviewPage() {
-  const [sensors,   setSensors]   = useState<Sensor[]>([]);
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [findings,  setFindings]  = useState<Finding[]>([]);
-  const [captures,  setCaptures]  = useState<Capture[]>([]);
-  const [triggers,  setTriggers]  = useState<Trigger[]>([]);
+  const dashboard = useApi(() => api.dashboard());
+  const entities  = useApi(() => api.entities());
+  const jobs      = useApi(() => api.jobs());
+  const health    = useApi(() => api.health());
 
-  useEffect(() => {
-    getSensors().then(setSensors);
-    getIncidents().then(setIncidents);
-    getFindings().then(setFindings);
-    getCaptures().then(setCaptures);
-    getTriggers().then(setTriggers);
-  }, []);
+  const reloadAll = () => {
+    // A capture change invalidates every dependent view, so they refresh
+    // together rather than showing a mix of two captures (PRD §7).
+    dashboard.reload(); entities.reload(); jobs.reload(); health.reload();
+  };
 
-  const spotInc = incidents[0];
+  // Ticks on its own so the badge ages into STALE without a reload.
+  const now = useNow();
+
+  const summary   = dashboard.data;
+  const lastJob   = jobs.data?.[0];
+  const analysedAt = lastJob ? new Date(lastJob.created_at) : null;
+
+  // "live" is a claim about data we can actually see. A failed call or a
+  // capture with no timestamp is unknown, never live (PRD §7).
+  const freshness: 'live' | 'stale' | 'unknown' =
+    dashboard.error || jobs.error || !analysedAt || !now ? 'unknown'
+      : now - analysedAt.getTime() > FRESH_FOR_MS ? 'stale'
+        : 'live';
+  const FRESHNESS = {
+    live:    { text: '● LIVE',    color: C.teal },
+    stale:   { text: '◍ STALE',   color: C.medium },
+    unknown: { text: '○ NO DATA', color: C.dim },
+  }[freshness];
+
+  const topIncident: Incident | undefined = summary?.top_incidents?.[0];
+  const alerts: Alert[] = summary?.recent_alerts ?? [];
+  const hosts: Entity[] = (entities.data ?? []).filter(e => e.kind === 'internal');
+  const destinations: Entity[] = (entities.data ?? []).filter(e => e.kind === 'external');
+
+  const kpis = [
+    { label: 'Total flows',     value: summary?.total_flows,      color: C.text },
+    { label: 'Suspicious',      value: summary?.suspicious_flows, color: C.medium },
+    { label: 'High risk',       value: summary?.high_risk,        color: C.critical },
+    { label: 'Incidents',       value: summary?.incidents,        color: C.high },
+    { label: 'Protocols',       value: summary?.protocols,        color: C.teal },
+  ];
 
   return (
     <div style={{ background: C.bg, minHeight: '100%', color: C.text, ...SANS }}>
 
-      {/* ── 1 · Hero band ─────────────────────────────────────────────────── */}
+      {/* ── 1 · Header + KPI rail ──────────────────────────────────────────── */}
       <Band first>
         <Label text="Perimeter · what's being watched" />
 
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
             <h1 style={{ fontSize: '1.2rem', fontWeight: 400, color: C.text, letterSpacing: '-0.025em', margin: 0, lineHeight: 1.2 }}>
-              Acme Financial Services
+              {lastJob?.filename ?? 'No capture loaded'}
             </h1>
-            <p style={{ ...MONO, fontSize: '0.6rem', color: C.dim, marginTop: '0.3rem', letterSpacing: '0.04em' }}>
-              Q3 Network Security Assessment · 3 sensors active
+            <p style={{ ...MONO, fontSize: '0.6rem', color: C.dim, marginTop: '0.3rem', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {/* Severity and state are never colour alone (PRD §10). */}
+              <span style={{ color: FRESHNESS.color }}>{FRESHNESS.text}</span>
+              <span>·</span>
+              <span>{analysedAt ? `analysed ${analysedAt.toLocaleString()}` : 'no analysis yet'}</span>
+              {health.data && <><span>·</span><span>DPI {health.data.dpi_mode}</span></>}
             </p>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <GhostLink href="/monitor">Start Live Capture</GhostLink>
+            <Button onClick={reloadAll}>Refresh</Button>
             <GhostLink href="/captures">Upload PCAP</GhostLink>
             <GhostLink href="/network/mesh" accent>Launch Graph Mesh »</GhostLink>
           </div>
         </div>
 
-        {/* Metric strip */}
-        <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: 1, background: C.border,
-          border: `1px solid ${C.border}`, marginTop: '1.5rem',
-        }}>
+        <div style={{ marginTop: '1.5rem' }}>
+          {dashboard.error ? (
+            <Failure error={dashboard.error} onRetry={reloadAll} />
+          ) : dashboard.loading && !summary ? (
+            <Skeleton rows={2} />
+          ) : (
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: 1, background: C.border, border: `1px solid ${C.border}`,
+            }}>
+              {kpis.map(k => (
+                <div key={k.label} style={{ padding: '1rem 1.25rem', background: C.bg }}>
+                  <span style={{ ...MONO, fontSize: '1.2rem', fontWeight: 500, color: k.color, display: 'block', marginBottom: '0.2rem' }}>
+                    {k.value ?? '—'}
+                  </span>
+                  <span style={{ ...MONO, fontSize: '0.55rem', color: C.dim, letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block' }}>
+                    {k.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Band>
+
+      {/* ── 2 · Highest-priority incident ──────────────────────────────────── */}
+      <Band>
+        <Label text="Signal · highest-priority incident" />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <H2>Active investigation</H2>
+          {topIncident && <MoreLink href={`/incidents/${topIncident.incident_id}`}>Open incident »</MoreLink>}
+        </div>
+
+        {dashboard.loading && !summary ? <Skeleton rows={3} />
+          : !topIncident ? (
+            <Note>
+              No incident has been correlated in this capture.
+              {' '}<Link href="/captures" style={{ color: C.teal }}>Upload a capture</Link> to analyse traffic.
+            </Note>
+          ) : (
+            <div style={{
+              display: 'flex', gap: '1rem',
+              border: `1px solid ${C.border}`,
+              borderLeft: `3px solid ${SEV_COLOR[topIncident.severity] ?? C.muted}`,
+              background: 'rgba(4,6,12,0.7)', padding: '1.1rem 1.25rem',
+            }}>
+              <span style={{ ...MONO, fontSize: '0.55rem', color: SEV_COLOR[topIncident.severity] ?? C.muted, letterSpacing: '0.06em', width: '2.8rem', flexShrink: 0, paddingTop: '0.15rem' }}>
+                INC
+              </span>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
+                  <span style={{ ...MONO, fontSize: '0.6rem', color: C.teal }}>{topIncident.incident_id}</span>
+                  <SevBadge sev={topIncident.severity} />
+                  <span style={{ ...MONO, fontSize: '0.55rem', color: C.muted }}>RISK {topIncident.risk}</span>
+                  <span style={{ ...MONO, fontSize: '0.55rem', color: C.muted }}>STATUS {topIncident.status}</span>
+                </div>
+                <div style={{ fontSize: '0.88rem', color: C.text, marginBottom: '0.35rem' }}>{topIncident.title}</div>
+                <div style={{ fontSize: '0.75rem', color: C.muted, fontWeight: 300, lineHeight: 1.65, maxWidth: '72ch' }}>
+                  {topIncident.root_hypothesis || topIncident.narrative?.[0] || 'No narrative recorded.'}
+                </div>
+                {topIncident.primary_host && (
+                  <div style={{ ...MONO, fontSize: '0.6rem', color: C.dim, marginTop: '0.5rem' }}>
+                    {topIncident.primary_host}
+                    {topIncident.primary_destination ? ` → ${topIncident.primary_destination}` : ''}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+      </Band>
+
+      {/* ── 3 · Noisiest host + riskiest destination ───────────────────────── */}
+      <Band>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem' }}>
           {[
-            { label: 'Preserved Capture', value: '684 MB', color: C.text,     sub: 'CAP-1050 · SHA-256 verified',     subColor: C.teal },
-            { label: 'Open Incidents',    value: String(incidents.length || 1), color: C.critical, sub: 'INC-2026-041 · Critical 91', subColor: C.critical },
-            { label: 'Correlated Findings', value: String(findings.length || 5), color: C.high, sub: '5 threat signals',        subColor: C.high },
-            { label: 'Fleet Throughput',  value: '1.25 Gbps', color: C.teal, sub: '27,660 pps live',               subColor: C.muted },
-          ].map(m => (
-            <div key={m.label} style={{ padding: '1rem 1.25rem', background: C.bg }}>
-              <span style={{ ...MONO, fontSize: '1.2rem', fontWeight: 500, color: m.color, display: 'block', marginBottom: '0.2rem' }}>
-                {m.value}
-              </span>
-              <span style={{ ...MONO, fontSize: '0.55rem', color: C.dim, letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block' }}>
-                {m.label}
-              </span>
-              <span style={{ ...MONO, fontSize: '0.55rem', color: m.subColor, display: 'block', marginTop: '0.3rem' }}>
-                {m.sub}
-              </span>
+            { label: 'Hosts · internal talkers', title: 'Noisiest hosts', rows: hosts, href: '/network/hosts' },
+            { label: 'Destinations · external', title: 'Riskiest destinations', rows: destinations, href: '/network/destinations' },
+          ].map(section => (
+            <div key={section.title}>
+              <Label text={section.label} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <H2>{section.title}</H2>
+                <MoreLink href={section.href}>All »</MoreLink>
+              </div>
+              {entities.error ? <Failure error={entities.error} onRetry={entities.reload} compact />
+                : entities.loading && !entities.data ? <Skeleton />
+                : section.rows.length === 0 ? <Note>Nothing in this capture.</Note>
+                : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', ...MONO, fontSize: '0.68rem' }}>
+                    <thead>
+                      <tr>
+                        <th style={TH}>Address</th>
+                        <th style={TH}>Kind</th>
+                        <th style={{ ...TH, textAlign: 'right' }}>Flows</th>
+                        <th style={{ ...TH, textAlign: 'right' }}>Risk</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {section.rows.slice(0, 5).map(e => (
+                        <tr key={e.id}>
+                          <td style={TDA}>{e.label}</td>
+                          <td style={TD}>{e.kind}</td>
+                          <td style={{ ...TDP, textAlign: 'right' }}>{e.flow_count}</td>
+                          <td style={{ ...TD, textAlign: 'right', color: e.risk > 0 ? C.high : C.muted }}>{e.risk}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
             </div>
           ))}
         </div>
       </Band>
 
-      {/* ── 2 · Active incident band ───────────────────────────────────────── */}
-      {spotInc && (
-        <Band>
-          <Label text="Signal · highest-priority incident" />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-            <H2>Active investigation</H2>
-            <MoreLink href={`/incidents/${spotInc.id}`}>Workflow Investigation »</MoreLink>
-          </div>
-
-          {/* Feature card — arstraumur .feature-card style */}
-          <div style={{
-            display: 'flex', gap: '1rem',
-            border: `1px solid ${C.border}`,
-            borderLeft: `3px solid ${C.critical}`,
-            background: 'rgba(4,6,12,0.7)',
-            padding: '1.1rem 1.25rem',
-          }}>
-            {/* Lead monogram */}
-            <span style={{
-              ...MONO, fontSize: '0.55rem', color: C.critical,
-              letterSpacing: '0.06em', width: '2.8rem', flexShrink: 0,
-              paddingTop: '0.15rem',
-            }}>INC</span>
-
-            <div style={{ flex: 1 }}>
-              {/* Meta line */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
-                <span style={{ ...MONO, fontSize: '0.6rem', color: C.teal }}>{spotInc.id}</span>
-                <span style={{
-                  ...MONO, fontSize: '0.52rem', fontWeight: 700,
-                  color: C.critical, border: '1px solid rgba(232,72,58,0.3)',
-                  background: 'rgba(232,72,58,0.06)', padding: '1px 5px', letterSpacing: '0.07em',
-                }}>SCORE {spotInc.riskScore}</span>
-                <span style={{ ...MONO, fontSize: '0.55rem', color: C.muted }}>
-                  STATUS: {spotInc.status.toUpperCase()}
-                </span>
-              </div>
-              {/* Title */}
-              <div style={{ fontSize: '0.88rem', color: C.text, fontWeight: 400, marginBottom: '0.35rem' }}>
-                {spotInc.title}
-              </div>
-              {/* Description */}
-              <div style={{ fontSize: '0.75rem', color: C.muted, fontWeight: 300, lineHeight: 1.65, maxWidth: '72ch' }}>
-                {spotInc.description}
-              </div>
-            </div>
-          </div>
-        </Band>
-      )}
-
-      {/* ── 3 · Two-column data band ───────────────────────────────────────── */}
+      {/* ── 4 · Recent alerts ──────────────────────────────────────────────── */}
       <Band>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem' }}>
+        <Label text="Synthesis · recent alerts" />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <H2>Recent alerts</H2>
+          <MoreLink href="/findings">All findings »</MoreLink>
+        </div>
 
-          {/* Triggers table */}
-          <div>
-            <Label text="Triggers · preserved captures" />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-              <H2>Preserved Triggers</H2>
-              <MoreLink href="/sensors">Fleet Status »</MoreLink>
-            </div>
+        {dashboard.error ? <Failure error={dashboard.error} onRetry={reloadAll} compact />
+          : dashboard.loading && !summary ? <Skeleton rows={5} />
+          : alerts.length === 0 ? (
+            <Note>
+              {summary?.total_flows
+                ? `No suspicious behaviour was flagged across ${summary.total_flows} flows.`
+                : 'No flows analysed yet.'}
+            </Note>
+          ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', ...MONO, fontSize: '0.68rem' }}>
               <thead>
                 <tr>
-                  <th style={TH}>Trigger</th>
-                  <th style={TH}>Score</th>
-                  <th style={TH}>Target</th>
-                  <th style={TH}>Status</th>
+                  <th style={TH}>Alert</th>
+                  <th style={TH}>Entity</th>
+                  <th style={TH}>Type</th>
+                  <th style={TH}>Severity</th>
+                  <th style={{ ...TH, textAlign: 'right' }}>Risk</th>
                 </tr>
               </thead>
               <tbody>
-                {triggers.map(t => (
-                  <tr key={t.id}>
-                    <td style={TDA}>{t.id}</td>
-                    <td style={TD}>
-                      <SevBadge sev={t.severity} />
-                      <span style={{ marginLeft: '0.4rem', color: C.text }}>{t.score}/100</span>
+                {alerts.map(a => (
+                  <tr key={a.alert_id}>
+                    <td style={TDA}>
+                      <Link href={`/findings/${a.alert_id}`} style={{ color: C.teal, textDecoration: 'none' }}>
+                        {a.alert_id}
+                      </Link>
                     </td>
-                    <td style={TDP}>{t.entityId}</td>
-                    <td style={TD}>{t.status}</td>
+                    <td style={TDP}>{a.entity}</td>
+                    <td style={TD}>{a.title}</td>
+                    <td style={TD}><SevBadge sev={a.severity} /></td>
+                    <td style={{ ...TD, textAlign: 'right', color: C.text }}>{a.risk_score}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          )}
+      </Band>
 
-          {/* Captures table */}
-          <div>
-            <Label text="Evidence · capture repository" />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-              <H2>Evidence Captures</H2>
-              <MoreLink href="/captures">Repository »</MoreLink>
-            </div>
+      {/* ── 5 · Capture history ────────────────────────────────────────────── */}
+      <Band>
+        <Label text="Evidence · capture history" />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <H2>Analysed captures</H2>
+          <MoreLink href="/captures">Repository »</MoreLink>
+        </div>
+
+        {jobs.error ? <Failure error={jobs.error} onRetry={jobs.reload} compact />
+          : jobs.loading && !jobs.data ? <Skeleton />
+          : (jobs.data ?? []).length === 0 ? <Note>No capture has been analysed yet.</Note>
+          : (
             <table style={{ width: '100%', borderCollapse: 'collapse', ...MONO, fontSize: '0.68rem' }}>
               <thead>
                 <tr>
-                  <th style={TH}>Capture ID</th>
-                  <th style={TH}>Type</th>
-                  <th style={TH}>Size</th>
+                  <th style={TH}>Source</th>
+                  <th style={TH}>Analysed</th>
+                  <th style={TH}>Result</th>
                   <th style={{ ...TH, textAlign: 'right' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {captures.slice(0, 4).map(c => (
-                  <tr key={c.id}>
-                    <td style={TDA}>{c.id}</td>
-                    <td style={TD}>{c.type}</td>
-                    <td style={TDP}>{formatBytes(c.sizeBytes || 0)}</td>
+                {(jobs.data ?? []).slice(0, 6).map(j => (
+                  <tr key={j.job_id}>
+                    <td style={TDA}>{j.filename}</td>
+                    <td style={TD}>{new Date(j.created_at).toLocaleString()}</td>
+                    <td style={TDP}>{j.message}</td>
                     <td style={{ ...TD, textAlign: 'right' }}>
-                      <MoreLink href={`/captures/${c.id}`}>Inspect »</MoreLink>
+                      <Button onClick={() => api.loadJob(j.job_id).then(reloadAll)}>Reopen</Button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-        </div>
-      </Band>
-
-      {/* ── 4 · Findings band ────────────────────────────────────────────────── */}
-      <Band>
-        <Label text="Synthesis · correlated findings" />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <H2>Findings</H2>
-          <MoreLink href="/findings">All findings »</MoreLink>
-        </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', ...MONO, fontSize: '0.68rem' }}>
-          <thead>
-            <tr>
-              <th style={TH}>ID</th>
-              <th style={TH}>Title</th>
-              <th style={TH}>Severity</th>
-              <th style={TH}>Category</th>
-              <th style={{ ...TH, textAlign: 'right' }}>Score</th>
-            </tr>
-          </thead>
-          <tbody>
-            {findings.map(f => (
-              <tr key={f.id}>
-                <td style={TDA}>{f.id}</td>
-                <td style={TDP}>
-                  <Link href={`/findings/${f.id}`}
-                    style={{ color: C.text, textDecoration: 'none' }}
-                    onMouseEnter={e => (e.currentTarget.style.color = C.teal)}
-                    onMouseLeave={e => (e.currentTarget.style.color = C.text)}
-                  >{f.title}</Link>
-                </td>
-                <td style={TD}><SevBadge sev={f.severity} /></td>
-                <td style={TD}>{f.category.replace(/_/g, ' ')}</td>
-                <td style={{ ...TD, textAlign: 'right', color: C.text }}>{f.riskScore}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Band>
-
-      {/* ── 5 · Sensor fleet band ─────────────────────────────────────────────── */}
-      <Band>
-        <Label text="Fleet · sensor nodes online" />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <H2>Sensor Fleet</H2>
-          <MoreLink href="/sensors">Manage sensors »</MoreLink>
-        </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', ...MONO, fontSize: '0.68rem' }}>
-          <thead>
-            <tr>
-              <th style={TH}>Sensor</th>
-              <th style={TH}>Host</th>
-              <th style={TH}>OS</th>
-              <th style={TH}>Status</th>
-              <th style={TH}>Throughput</th>
-              <th style={{ ...TH, textAlign: 'right' }}>Buffer</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sensors.map(s => {
-              const sc = s.status === 'online' ? C.teal : s.status === 'degraded' ? C.medium : C.critical;
-              return (
-                <tr key={s.id}>
-                  <td style={TDA}>{s.id}</td>
-                  <td style={TDP}>{s.hostname}</td>
-                  <td style={TD}>{s.os}</td>
-                  <td style={TD}>
-                    <span style={{ ...MONO, fontSize: '0.52rem', fontWeight: 700, color: sc, letterSpacing: '0.08em' }}>
-                      {s.status.toUpperCase()}
-                    </span>
-                  </td>
-                  <td style={TDP}>{s.metrics.mbps} Mbps</td>
-                  <td style={{ ...TD, textAlign: 'right', color: C.text }}>{s.metrics.bufferPercent}%</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+          )}
       </Band>
 
     </div>

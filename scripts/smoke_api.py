@@ -56,8 +56,8 @@ def main() -> None:
 
         print("GET /api/network/graph   (Dashboard + Network Explorer)")
         graph = client.get("/api/network/graph").json()
-        check("nodes + links", bool(graph["nodes"]) and bool(graph["links"]),
-              f"{len(graph['nodes'])} nodes / {len(graph['links'])} links")
+        check("nodes + edges", bool(graph["nodes"]) and bool(graph["edges"]),
+              f"{len(graph['nodes'])} nodes / {len(graph['edges'])} edges")
         node = graph["nodes"][0]
         # TYPE_META in main.jsx keys off `type`; the node label comes from `name`.
         check("node has id/name/type/risk", {"id", "name", "type", "risk"} <= set(node))
@@ -65,8 +65,13 @@ def main() -> None:
               all(n["type"] in {"person", "phone", "vehicle", "location", "organization", "account"}
                   for n in graph["nodes"]))
         check("some node is central", any(n["central"] for n in graph["nodes"]))
-        check("link has source/target/suspicious",
-              {"source", "target", "suspicious"} <= set(graph["links"][0]))
+        check("edge has the PRD §6 shape",
+              {"id", "source", "target", "flow_ids", "bytes", "packets",
+               "risk", "severity"} <= set(graph["edges"][0]))
+        node_ids = {n["id"] for n in graph["nodes"]}
+        check("every edge maps to real nodes and real flows",
+              all(e["source"] in node_ids and e["target"] in node_ids and e["flow_ids"]
+                  for e in graph["edges"]))
 
         print("GET /api/entities")
         entities = client.get("/api/entities").json()
@@ -124,7 +129,7 @@ def main() -> None:
         print(f"       provider={report['provider']}  {report['executive_summary'][:100]}...")
 
         print("POST /api/pathfinder   (Pathfinder tab)")
-        link = graph["links"][0]
+        link = graph["edges"][0]
         found = client.post("/api/pathfinder", json={"from": link["source"], "to": link["target"]})
         check("200 for a known pair", found.status_code == 200)
         path = found.json()
