@@ -134,25 +134,11 @@ interface QuickAction {
 
 const QUICK_ACTIONS: QuickAction[] = [
   {
-    id: 'new-capture',
-    label: 'Start Manual Capture',
-    description: 'Trigger a manual capture on a sensor',
-    url: '/capture',
-    icon: <HardDrive size={13} style={{ color: '#a78bfa' }} />,
-  },
-  {
     id: 'upload-pcap',
     label: 'Upload PCAP File',
     description: 'Upload and analyse an external capture file',
     url: '/captures/upload',
     icon: <HardDrive size={13} style={{ color: 'var(--accent-blue)' }} />,
-  },
-  {
-    id: 'new-investigation',
-    label: 'New Investigation',
-    description: 'Start a new analysis investigation',
-    url: '/investigations/new',
-    icon: <Search size={13} style={{ color: 'var(--status-online)' }} />,
   },
   {
     id: 'view-incidents',
@@ -464,10 +450,8 @@ export function CommandPalette() {
     if (focused) focused.scrollIntoView({ block: 'nearest' });
   }, [focusedIndex]);
 
-  // Reset focus when results change
-  useEffect(() => {
-    setFocusedIndex(0);
-  }, [query]);
+  // Focus resets where the query changes, below — an effect watching `query`
+  // would set state during render commit for the same result.
 
   if (!commandPaletteOpen) return null;
 
@@ -521,7 +505,7 @@ export function CommandPalette() {
               ref={inputRef}
               type="text"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => { setQuery(e.target.value); setFocusedIndex(0); }}
               placeholder="Search findings, incidents, hosts, captures, sensors…"
               aria-label="Search"
               style={{

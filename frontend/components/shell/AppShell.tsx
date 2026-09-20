@@ -19,7 +19,6 @@ import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ToastContainer } from './ToastContainer';
 import { CommandPalette } from './CommandPalette';
-import { OpeningSplash } from '../ui/OpeningSplash';
 import { AICopilotWidget } from '../ai/AICopilotWidget';
 import { useBackendStatus } from '@/lib/useApi';
 
@@ -167,7 +166,6 @@ export function AppShell({ children }: AppShellProps) {
         </div>
 
         {/* Global Overlays */}
-        <OpeningSplash />
         <ToastContainer toasts={toasts} onDismiss={removeToast} />
         <CommandPalette />
         <AICopilotWidget />

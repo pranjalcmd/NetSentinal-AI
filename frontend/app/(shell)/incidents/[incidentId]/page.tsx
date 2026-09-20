@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Layers,
@@ -26,7 +26,7 @@ import type { Incident, Host, Finding, StoryStep } from '@/lib/types';
 import { RiskBadge, ConfidenceBadge, StatusBadge, SeverityBadge } from '@/components/ui/Badge';
 
 export default function IncidentDetailPage({ params }: { params?: Promise<{ incidentId: string }> | { incidentId: string } }) {
-  const [incidentId, setIncidentId] = useState<string>('');
+  const { incidentId } = params instanceof Promise ? use(params) : (params ?? { incidentId: '' });
   const [incident, setIncident] = useState<Incident | null>(null);
   const [hosts, setHosts] = useState<Host[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
@@ -37,16 +37,6 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
   const [analystNotes, setAnalystNotes] = useState<string>('');
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [notesSavedToast, setNotesSavedToast] = useState(false);
-
-  useEffect(() => {
-    if (params) {
-      if (typeof (params as Promise<any>).then === 'function') {
-        (params as Promise<{ incidentId: string }>).then(p => setIncidentId(p.incidentId));
-      } else {
-        setIncidentId((params as { incidentId: string }).incidentId);
-      }
-    }
-  }, [params]);
 
   useEffect(() => {
     if (!incidentId) return;

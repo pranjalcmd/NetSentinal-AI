@@ -1072,23 +1072,6 @@ export async function searchAll(query: string): Promise<SearchResult[]> {
     }
   }
 
-  // Sensors
-  for (const sensor of MOCK_SENSORS) {
-    const score = (sensor.name.toLowerCase().includes(q) ? 3 : 0) +
-                  (sensor.hostname.toLowerCase().includes(q) ? 2 : 0) +
-                  (sensor.id.toLowerCase().includes(q) ? 1 : 0)
-    if (score > 0) {
-      results.push({
-        type: 'sensor',
-        id: sensor.id,
-        title: sensor.name,
-        subtitle: `${sensor.id} · ${sensor.status} · ${sensor.hostname}`,
-        score: sensor.status === 'online' ? 70 : sensor.status === 'degraded' ? 50 : 30,
-        timestamp: sensor.lastSeen,
-        url: `/sensors/${sensor.id}`,
-      })
-    }
-  }
 
   // Triggers
   for (const trigger of MOCK_TRIGGERS) {

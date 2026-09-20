@@ -39,6 +39,19 @@ AI_API_KEY=sk-ant-...
 That is the only change needed. Nothing else reads the key, and nothing else
 has to be edited.
 
+`AI_API_KEY` also accepts a **comma-separated pool**:
+
+```
+AI_API_KEY=key-one,key-two,key-three
+```
+
+The Gemini free tier caps requests per key per day, which a single demo run
+exceeds. On a `429` the service moves to the next key; on a transient `5xx` it
+retries the same one after a short pause. Only when the pool is exhausted does
+it fall back to the mock analyst, and `/api/health` reports the last provider
+error verbatim (with every key redacted) so a spent key never looks like
+"no key set".
+
 - Empty or missing → `/api/alerts/{id}/explain`, `/api/ai/ask` and
   `/api/ai/report` return the mock analyst text. Everything else works
   identically.
@@ -97,8 +110,19 @@ uvicorn backend.app.main:app --reload  # http://localhost:8000
 ```bash
 cd frontend
 npm install
-npm run dev        # http://localhost:3000, proxies /api to :8000
+npm run dev        # http://localhost:3000
 ```
+
+The frontend calls the API directly at `NEXT_PUBLIC_API_URL`, which defaults to
+`http://localhost:8000`. Set it in `frontend/.env.local` to point elsewhere:
+
+```bash
+NEXT_PUBLIC_API_URL=https://your-api.example.com
+```
+
+Run the backend first. With it down every page still renders, falling back to
+the bundled sample capture, and the shell says so in a banner across the top —
+so a demo never silently shows fixtures as if they were live.
 
 The backend preloads 150 flows from `data/dataset.json` at startup, so every
 view has real data before you upload anything. No dataset → it falls back to
@@ -107,7 +131,7 @@ view has real data before you upload anything. No dataset → it falls back to
 ### Verify everything
 
 ```bash
-python -m pytest tests -q            # 259 tests: rules, scoring, graph, DPI, L7, AI, persistence
+python -m pytest -q                  # 268 tests: rules, scoring, graph, DPI, L7, AI, persistence, ingest
 python scripts/smoke_api.py          # every endpoint, in-process, no server needed
 python scripts/benchmark.py          # accuracy / F1 / throughput report
 python -m dpi.l7                     # L7 parser self-check, no deps
@@ -385,8 +409,21 @@ dpi/pcap_flows.py                pure-Python pcap reader + flow aggregation
 dpi/l7.py                        TLS SNI / HTTP Host / DNS DPI (Packet_analyzer port)
 ml/detection_engine.py           feature extraction + heuristic + classifier
 scripts/                         generate_dataset, train, benchmark, smoke_api, live_ai_check
-frontend/                        ByteGuard React SPA (unmodified)
+client/netsentinel.js            browser capture agent — one script tag, any site
+client/capture_agent.py          backend capture agent — stdlib only, any Python service
+frontend/                        Next.js dashboard (App Router, Tailwind)
+frontend/lib/api.ts              the single typed client; every backend call goes through it
+frontend/lib/graph-adapter.ts    backend graph -> validated render nodes/edges
+docs/CAPTURE_MODULE.md           how telemetry gets in, and what each route can see
 ```
+
+## Capture module
+
+Three ways in — PCAP upload, a browser agent that installs on any site with one
+script tag, and a stdlib-only Python agent for a service backend. All three
+produce the same normalized flow and enter the same pipeline.
+
+Full contract, privacy guarantees and troubleshooting: **[docs/CAPTURE_MODULE.md](docs/CAPTURE_MODULE.md)**.
 
 ## Team ownership
 

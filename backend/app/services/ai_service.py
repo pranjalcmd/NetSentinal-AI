@@ -23,6 +23,7 @@ Self-check (no network, no key needed):
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any
@@ -215,13 +216,30 @@ def _describe(exc: Exception) -> str:
         text = f"provider sent a 2xx that is not JSON: {exc}"
     else:
         text = f"{type(exc).__name__}: {exc}"
-    key = settings.ai_api_key
-    return text.replace(key, "<redacted>") if key else text
+    for key in _api_keys():
+        text = text.replace(key, "<redacted>")
+    return text
 
 
 def _clip(text: str, limit: int) -> str:
     """Cut at `limit`, saying so. A silent cut mid-number reads as a bug."""
     return text if len(text) <= limit else text[:limit].rstrip() + f"… (+{len(text) - limit} chars)"
+
+
+def _api_keys() -> list[str]:
+    """AI_API_KEY, split on commas so a pool of keys can be supplied."""
+    return [k.strip() for k in (settings.ai_api_key or "").split(",") if k.strip()]
+
+
+def _is_quota_error(exc: Exception) -> bool:
+    """429 means this key is spent for now, not that the request was wrong."""
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429
+
+
+def _is_busy_error(exc: Exception) -> bool:
+    """503/500 is the model being overloaded — the same key will work shortly."""
+    return (isinstance(exc, httpx.HTTPStatusError)
+            and exc.response.status_code in (500, 502, 503, 504))
 
 
 def _gemini_text(data: dict) -> str:
@@ -256,6 +274,18 @@ class AIService:
 
     def __init__(self) -> None:
         self.last_error: str | None = None
+        self._key_index = 0
+
+    @property
+    def active_key(self) -> str:
+        """The key the next call uses.
+
+        AI_API_KEY may hold several comma-separated keys. The free tier caps
+        requests per key per day, which is well under one demo, so a spent key
+        rotates to the next instead of dropping the whole session to mock.
+        """
+        keys = _api_keys()
+        return keys[self._key_index % len(keys)] if keys else ""
 
     @property
     def provider(self) -> str:
@@ -301,7 +331,7 @@ class AIService:
         base = settings.ai_api_url or "https://generativelanguage.googleapis.com/v1beta"
         data = await self._post(
             f"{base}/models/{settings.ai_model}:generateContent",
-            {"x-goog-api-key": settings.ai_api_key or ""},
+            {"x-goog-api-key": self.active_key},
             {
                 "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
                 "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -324,7 +354,7 @@ class AIService:
         base = settings.ai_api_url or "https://api.openai.com/v1"
         data = await self._post(
             f"{base}/chat/completions",
-            {"Authorization": f"Bearer {settings.ai_api_key}"},
+            {"Authorization": f"Bearer {self.active_key}"},
             {
                 "model": settings.ai_model,
                 "temperature": 0.2,
@@ -342,7 +372,7 @@ class AIService:
         base = settings.ai_api_url or "https://api.anthropic.com/v1"
         data = await self._post(
             f"{base}/messages",
-            {"x-api-key": settings.ai_api_key or "", "anthropic-version": "2023-06-01"},
+            {"x-api-key": self.active_key, "anthropic-version": "2023-06-01"},
             {
                 "model": settings.ai_model,
                 "max_tokens": 2000,
@@ -371,16 +401,32 @@ class AIService:
             self.last_error = f"unknown AI_PROVIDER {settings.ai_provider!r}"
             print(f"[ai_service] {self.last_error}, using mock")
             return None
-        try:
-            parsed = json.loads(await adapter(prompt, schema))
-            self.last_error = None
-            return parsed
-        except Exception as exc:  # noqa: BLE001
-            # ponytail: degrade to the mock rather than 500 the investigation
-            # tab. Retry/backoff only if this ever gets real user traffic.
-            self.last_error = _describe(exc)
-            print(f"[ai_service] {self.provider} call failed, using mock: {self.last_error}")
-            return None
+        attempts = max(1, len(_api_keys()))
+        for attempt in range(attempts):
+            try:
+                parsed = json.loads(await adapter(prompt, schema))
+                self.last_error = None
+                return parsed
+            except Exception as exc:  # noqa: BLE001
+                self.last_error = _describe(exc)
+                # A spent key is worth retrying on the next one; anything else
+                # would fail identically, so it falls through to the mock.
+                if attempt + 1 < attempts:
+                    if _is_quota_error(exc):
+                        self._key_index += 1
+                        print(f"[ai_service] key {attempt + 1} out of quota, trying the next")
+                        continue
+                    if _is_busy_error(exc):
+                        # ponytail: fixed short pause, not exponential backoff.
+                        # The caller is one analyst waiting on one answer.
+                        await asyncio.sleep(1.5)
+                        print("[ai_service] model busy, retrying")
+                        continue
+                # ponytail: degrade to the mock rather than 500 the
+                # investigation tab. Backoff only if this gets real traffic.
+                print(f"[ai_service] {self.provider} call failed, using mock: {self.last_error}")
+                return None
+        return None
 
     # ------------------------------------------------------------------
     # /api/alerts/{id}/explain  — §45 response schema

@@ -1913,7 +1913,7 @@ export const MOCK_NOTIFICATIONS: AppNotification[] = [
     message: 'ACME-BRANCH-05 has not reported a heartbeat in 4 minutes. Capture engine offline. 7 uploads queued.',
     timestamp: '2026-09-16T15:08:14Z',
     read: false,
-    link: '/sensors/SNS-051',
+    link: '/health',
   },
   {
     id: 'NOTIF-004',
@@ -1922,7 +1922,7 @@ export const MOCK_NOTIFICATIONS: AppNotification[] = [
     message: 'Deep analysis of CAP-1050 completed in 52s. 5 findings, 1 incident. AI narrative generated.',
     timestamp: '2026-09-16T15:08:42Z',
     read: false,
-    link: '/investigations/INV-001',
+    link: '/incidents',
   },
   {
     id: 'NOTIF-005',
@@ -1931,7 +1931,7 @@ export const MOCK_NOTIFICATIONS: AppNotification[] = [
     message: 'DPI Engine queue depth at 1,840 items. Processing CAP-1042 (1.84 GB). Expected to clear in ~8 minutes.',
     timestamp: '2026-09-16T15:05:12Z',
     read: true,
-    link: '/system/health',
+    link: '/health',
   },
   {
     id: 'NOTIF-006',
@@ -1949,7 +1949,7 @@ export const MOCK_NOTIFICATIONS: AppNotification[] = [
     message: 'Score 68 on DEV-WS-028 — new destination cdn-sync-update.net. Below threshold; review recommended.',
     timestamp: '2026-09-16T13:48:22Z',
     read: true,
-    link: '/triggers/TRG-879',
+    link: '/findings',
   },
   {
     id: 'NOTIF-008',

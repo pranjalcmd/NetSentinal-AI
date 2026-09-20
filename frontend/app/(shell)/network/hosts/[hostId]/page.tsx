@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Server,
@@ -24,22 +24,12 @@ import type { Host, Flow, Finding, Destination } from '@/lib/types';
 import { RiskBadge, SeverityBadge, StatusBadge } from '@/components/ui/Badge';
 
 export default function HostForensicsPage({ params }: { params?: Promise<{ hostId: string }> | { hostId: string } }) {
-  const [hostId, setHostId] = useState<string>('');
+  const { hostId } = params instanceof Promise ? use(params) : (params ?? { hostId: '' });
   const [host, setHost] = useState<Host | null>(null);
   const [flows, setFlows] = useState<Flow[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (params) {
-      if (typeof (params as Promise<any>).then === 'function') {
-        (params as Promise<{ hostId: string }>).then(p => setHostId(p.hostId));
-      } else {
-        setHostId((params as { hostId: string }).hostId);
-      }
-    }
-  }, [params]);
 
   useEffect(() => {
     if (!hostId) return;

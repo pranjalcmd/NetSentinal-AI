@@ -66,7 +66,11 @@ export default function ThreatHuntPage() {
   };
 
   useEffect(() => {
-    runQuery();
+    let live = true;
+    getFlows()
+      .then((flows) => { if (live) { setResults(flows); setExecuting(false); } })
+      .catch(() => { if (live) setExecuting(false); });
+    return () => { live = false; };
   }, []);
 
   return (

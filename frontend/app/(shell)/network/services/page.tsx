@@ -34,8 +34,14 @@ export default function NetworkServicesPage() {
     }
   };
 
+  // Setting state from the promise rather than from the effect body: a
+  // synchronous setState in an effect is the cascading-render case.
   useEffect(() => {
-    fetchData();
+    let live = true;
+    getServices()
+      .then((data) => { if (live) { setServices(data); setLoading(false); } })
+      .catch(() => { if (live) setLoading(false); });
+    return () => { live = false; };
   }, []);
 
   const filteredServices = useMemo(() => {

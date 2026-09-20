@@ -81,7 +81,7 @@ export const MOCK_NOTIFICATIONS: AppNotification[] = [
     message: 'SNS-041 reporting 20% packet loss. Check interface configuration.',
     timestamp: '2026-09-17T15:30:00Z',
     read: false,
-    link: '/sensors',
+    link: '/health',
   },
   {
     id: 'notif-004',
@@ -90,7 +90,7 @@ export const MOCK_NOTIFICATIONS: AppNotification[] = [
     message: 'INV-0021 completed — 6 findings, 1 new incident raised',
     timestamp: '2026-09-17T15:00:00Z',
     read: true,
-    link: '/investigations',
+    link: '/incidents',
   },
   {
     id: 'notif-005',
@@ -618,24 +618,6 @@ export function searchAll(query: string): SearchResult[] {
     }
   }
 
-  // Search sensors
-  for (const s of MOCK_SENSORS) {
-    if (
-      s.name.toLowerCase().includes(q) ||
-      s.hostname.toLowerCase().includes(q) ||
-      s.id.toLowerCase().includes(q) ||
-      s.status.toLowerCase().includes(q)
-    ) {
-      results.push({
-        type: 'sensor',
-        id: s.id,
-        title: s.name,
-        subtitle: `${s.hostname} · ${s.status} · ${s.metrics.mbps} Mbps`,
-        timestamp: s.lastSeen,
-        url: `/sensors/${s.id}`,
-      });
-    }
-  }
 
   return results;
 }

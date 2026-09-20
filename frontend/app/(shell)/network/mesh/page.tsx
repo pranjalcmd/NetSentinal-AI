@@ -35,28 +35,37 @@ export default function NetworkMeshPage() {
   const [selectedNode, setSelectedNode] = useState<RenderGraphNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<RenderGraphEdge | null>(null);
 
-  const loadData = async () => {
-    setLoading(true);
+  // Fetch and apply are separate so that nothing is set synchronously inside
+  // the effect below — that is the cascading-render case React warns about.
+  const fetchAll = () =>
+    Promise.all([
+      getNetworkGraph().catch(() => ({ nodes: [], edges: [] })),
+      getFlows().catch(() => []),
+      getAlerts().catch(() => []),
+    ]);
+
+  const apply = ([gRes, fRes, aRes]: Awaited<ReturnType<typeof fetchAll>>) => {
+    setRawGraph(gRes);
+    setFlows(fRes);
+    setAlerts(aRes);
     setError(null);
-    try {
-      const [gRes, fRes, aRes] = await Promise.all([
-        getNetworkGraph().catch(() => ({ nodes: [], edges: [] })),
-        getFlows().catch(() => []),
-        getAlerts().catch(() => []),
-      ]);
-      setRawGraph(gRes);
-      setFlows(fRes);
-      setAlerts(aRes);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load graph data');
-    } finally {
-      setLoading(false);
-    }
+    setLoading(false);
   };
 
   useEffect(() => {
-    loadData();
+    let live = true;
+    fetchAll()
+      .then((res) => { if (live) apply(res); })
+      .catch((err) => { if (live) { setError(err?.message ?? 'Failed to load graph data'); setLoading(false); } });
+    return () => { live = false; };
   }, []);
+
+  const refresh = () => {
+    setLoading(true);
+    fetchAll()
+      .then(apply)
+      .catch((err) => { setError(err?.message ?? 'Failed to load graph data'); setLoading(false); });
+  };
 
   const graph: ValidatedGraph = useMemo(() => {
     if (rawGraph.nodes && rawGraph.nodes.length > 0) {
@@ -155,7 +164,7 @@ export default function NetworkMeshPage() {
           </div>
 
           <button
-            onClick={loadData}
+            onClick={refresh}
             disabled={loading}
             className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300"
             title="Refresh graph"

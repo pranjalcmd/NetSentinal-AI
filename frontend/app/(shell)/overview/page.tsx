@@ -32,6 +32,7 @@ import {
   AnalysisJob
 } from '@/lib/api';
 import { adaptBackendGraph, buildGraphFromFlows, ValidatedGraph, RenderGraphNode, RenderGraphEdge } from '@/lib/graph-adapter';
+import { useNow } from '@/lib/useApi';
 import { InteractiveNetworkMesh } from '../../../components/network/InteractiveNetworkMesh';
 
 export default function SOCOverviewDashboard() {
@@ -45,6 +46,7 @@ export default function SOCOverviewDashboard() {
   const [flows, setFlows] = useState<CanonicalFlow[]>([]);
   const [alerts, setAlerts] = useState<CanonicalAlert[]>([]);
   const [jobs, setJobs] = useState<AnalysisJob[]>([]);
+  const [summary, setSummary] = useState<Record<string, any> | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string>('demo');
 
   // Filters
@@ -89,7 +91,20 @@ export default function SOCOverviewDashboard() {
   };
 
   useEffect(() => {
-    fetchDashboardData();
+    let live = true;
+    Promise.all([
+      getNetworkGraph().catch(() => ({ nodes: [], edges: [] })),
+      getFlows().catch(() => []),
+      getAlerts().catch(() => []),
+      getJobs().catch(() => []),
+      getDashboard().catch(() => null),
+    ]).then(([g, f, a, j, d]) => {
+      if (!live) return;
+      setRawGraph(g); setFlows(f); setAlerts(a); setJobs(j); setSummary(d);
+      setLastRefreshed(new Date().toLocaleTimeString());
+      setLoading(false);
+    });
+    return () => { live = false; };
   }, []);
 
   // Handle Capture Reload
@@ -135,21 +150,26 @@ export default function SOCOverviewDashboard() {
   }, [graph, severityFilter, searchQuery]);
 
   // Derived SOC KPIs (PRD Section 4)
-  const kpis = useMemo(() => {
-    const totalFlows = flows.length || graph.edges.reduce((acc, e) => acc + e.flow_ids.length, 0);
-    const suspiciousFlows = flows.filter((f) => f.ndpi_risks?.length > 0 || (f.ml_detection?.risk_score || 0) > 50).length;
-    const highRiskFlows = flows.filter((f) => (f.ml_detection?.risk_score || 0) >= 75).length;
-    const totalIncidents = alerts.length;
-
-    return {
-      totalFlows,
-      suspiciousFlows,
-      highRiskFlows,
-      totalIncidents,
-    };
-  }, [flows, graph, alerts]);
+  const kpis = useMemo(() => ({
+    totalFlows: summary?.total_flows ?? flows.length,
+    suspiciousFlows: summary?.suspicious_flows ?? 0,
+    highRiskFlows: summary?.high_risk ?? 0,
+    totalIncidents: summary?.incidents ?? 0,
+  }), [summary, flows]);
 
   // Top Risky Entities & Incidents (Right Rail)
+  // Age of the last analysis, reported rather than assumed.
+  const now = useNow();
+  const freshness = useMemo(() => {
+    const at = jobs[0]?.created_at ? new Date(jobs[0].created_at).getTime() : null;
+    if (!at || !now) return { label: '—', stale: false };
+    const mins = Math.round((now - at) / 60000);
+    if (mins < 1) return { label: 'Live', stale: false };
+    if (mins < 5) return { label: `${mins}m ago`, stale: false };
+    if (mins < 60) return { label: `${mins}m ago`, stale: true };
+    return { label: `${Math.round(mins / 60)}h ago`, stale: true };
+  }, [jobs, now]);
+
   const topIncident = alerts[0];
   const topRiskyDestination = useMemo(() => {
     return graph.nodes.filter((n) => n.kind === 'external').sort((a, b) => b.risk - a.risk)[0];
@@ -170,11 +190,11 @@ export default function SOCOverviewDashboard() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-white tracking-tight">Production Corporate Core</h1>
+              <h1 className="text-lg font-bold text-white tracking-tight">{jobs[0]?.filename ?? 'No capture loaded'}</h1>
               <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold uppercase ${
-                isStale ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                freshness.stale ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
               }`}>
-                {isStale ? 'STALE' : 'LIVE'}
+                {freshness.stale ? 'STALE' : 'LIVE'}
               </span>
             </div>
             <p className="text-xs text-zinc-400 font-mono">
@@ -235,7 +255,7 @@ export default function SOCOverviewDashboard() {
           { label: 'SUSPICIOUS FLOWS', val: kpis.suspiciousFlows, sub: 'Rule / DPI matches', color: 'text-amber-400' },
           { label: 'HIGH-RISK FLOWS', val: kpis.highRiskFlows, sub: 'ML Anomaly > 75%', color: 'text-orange-400' },
           { label: 'ACTIVE INCIDENTS', val: kpis.totalIncidents, sub: 'Correlated alerts', color: 'text-red-400' },
-          { label: 'FRESHNESS', val: isStale ? 'Stale (>5m)' : 'Live (<1s)', sub: 'Ingestion pipeline', color: isStale ? 'text-amber-400' : 'text-[#3DD9C4]' },
+          { label: 'FRESHNESS', val: freshness.label, sub: 'Last analysis', color: freshness.stale ? 'text-amber-400' : 'text-[#3DD9C4]' },
         ].map((kpi, idx) => (
           <div key={idx} className="p-4 rounded-xl bg-zinc-950 border border-white/10 flex flex-col justify-between">
             <span className="text-[11px] font-mono text-zinc-500 tracking-wider">{kpi.label}</span>
@@ -418,7 +438,7 @@ export default function SOCOverviewDashboard() {
               <ShieldAlert className="w-4 h-4 text-amber-400" />
               RECENT ALERTS ({alerts.length})
             </span>
-            <Link href="/alerts" className="text-[#3DD9C4] hover:underline">View All</Link>
+            <Link href="/findings" className="text-[#3DD9C4] hover:underline">View All</Link>
           </div>
 
           <div className="space-y-2">
