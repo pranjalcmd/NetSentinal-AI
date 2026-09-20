@@ -20,6 +20,7 @@ import { Topbar } from './Topbar';
 import { ToastContainer } from './ToastContainer';
 import { CommandPalette } from './CommandPalette';
 import { OpeningSplash } from '../ui/OpeningSplash';
+import { AICopilotWidget } from '../ai/AICopilotWidget';
 
 export type ToastVariant = 'info' | 'success' | 'warning' | 'error';
 
@@ -154,6 +155,7 @@ export function AppShell({ children }: AppShellProps) {
         <OpeningSplash />
         <ToastContainer toasts={toasts} onDismiss={removeToast} />
         <CommandPalette />
+        <AICopilotWidget />
       </div>
     </AppContext.Provider>
   );

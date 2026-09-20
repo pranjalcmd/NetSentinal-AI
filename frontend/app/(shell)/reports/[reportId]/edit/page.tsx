@@ -26,7 +26,7 @@ export default function EditReportPage() {
         <div className="space-y-2">
           <h2 className="text-xl font-bold text-slate-100 border-b border-slate-800 pb-2">1. Executive Summary</h2>
           <p className="text-xs text-slate-300 leading-relaxed">
-            During the Q3 Network Security Assessment for Acme Financial Services, NetSentinal AI detected anomalous outbound communications originating from workstation FIN-WS-014 (10.0.0.14). Continuous evidence collection via sensor SNS-042 preserved 684 MB of high-fidelity PCAP data (CAP-1050), corroborating periodic beaconing behavior to external IP 45.77.21.184.
+            During the Q3 Network Security Assessment for Acme Financial Services, PRISM detected anomalous outbound communications originating from workstation FIN-WS-014 (10.0.0.14). Continuous evidence collection via sensor SNS-042 preserved 684 MB of high-fidelity PCAP data (CAP-1050), corroborating periodic beaconing behavior to external IP 45.77.21.184.
           </p>
         </div>
       </div>

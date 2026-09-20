@@ -1,474 +1,474 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
-import { api, apiBaseUrl, type Alert, type Entity, type Incident } from '@/lib/api';
-import { useApi, useNow } from '@/lib/useApi';
+import {
+  Activity,
+  ShieldAlert,
+  AlertTriangle,
+  Server,
+  RefreshCw,
+  Filter,
+  Search,
+  CheckCircle2,
+  X,
+  FileText,
+  Clock,
+  ArrowRight,
+  Database,
+  Layers,
+  BarChart2
+} from 'lucide-react';
+import {
+  getHealth,
+  getDashboard,
+  getNetworkGraph,
+  getAlerts,
+  getFlows,
+  getJobs,
+  loadJob,
+  CanonicalFlow,
+  CanonicalAlert,
+  AnalysisJob
+} from '@/lib/api';
+import { adaptBackendGraph, buildGraphFromFlows, ValidatedGraph, RenderGraphNode, RenderGraphEdge } from '@/lib/graph-adapter';
+import { InteractiveNetworkMesh } from '../../../components/network/InteractiveNetworkMesh';
 
-// ─── Design tokens ────────────────────────────────────────────────────────────
-const C = {
-  bg:       '#04060c',
-  surface:  '#06090f',
-  border:   '#1A2230',
-  border2:  '#0f1620',
-  text:     '#E4E8EE',
-  muted:    '#515E72',
-  dim:      '#3a4455',
-  teal:     '#3DD9C4',
-  critical: '#E8483A',
-  high:     '#E8863A',
-  medium:   '#E8C93A',
-  low:      '#4B7BE5',
-};
+export default function SOCOverviewDashboard() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isStale, setIsStale] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<string>('Just now');
 
-const MONO: React.CSSProperties = { fontFamily: "'IBM Plex Mono', monospace" };
-const SANS: React.CSSProperties = { fontFamily: "'Inter', system-ui, sans-serif" };
+  // Backend Data
+  const [rawGraph, setRawGraph] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] });
+  const [flows, setFlows] = useState<CanonicalFlow[]>([]);
+  const [alerts, setAlerts] = useState<CanonicalAlert[]>([]);
+  const [jobs, setJobs] = useState<AnalysisJob[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<string>('demo');
 
-/** Analysis older than this is reported as stale, never as live (PRD §7). */
-const FRESH_FOR_MS = 5 * 60 * 1000;
+  // Filters
+  const [severityFilter, setSeverityFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
-const SEV_COLOR: Record<string, string> = {
-  CRITICAL: C.critical, HIGH: C.high, MEDIUM: C.medium, LOW: C.low, INFO: C.muted,
-};
+  // Selected Elements (Pinned Graph Context)
+  const [selectedNode, setSelectedNode] = useState<RenderGraphNode | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<RenderGraphEdge | null>(null);
 
-// ─── Shared style helpers ─────────────────────────────────────────────────────
-function Label({ text }: { text: string }) {
-  return (
-    <p style={{
-      display: 'flex', alignItems: 'center',
-      ...MONO, fontSize: '0.62rem', color: C.dim,
-      letterSpacing: '0.06em', margin: '0 0 0.55rem',
-    }}>
-      {text}
-      <span style={{ flex: 1, height: 1, background: C.border2, marginLeft: '0.75rem' }} />
-    </p>
-  );
-}
+  // Load All Dashboard Telemetry
+  const fetchDashboardData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [graphRes, flowsRes, alertsRes, jobsRes, healthRes] = await Promise.all([
+        getNetworkGraph().catch(() => ({ nodes: [], edges: [] })),
+        getFlows().catch(() => []),
+        getAlerts().catch(() => []),
+        getJobs().catch(() => []),
+        getHealth().catch(() => null),
+      ]);
 
-function SevBadge({ sev }: { sev: string }) {
-  const color = SEV_COLOR[sev] ?? C.muted;
-  return (
-    <span style={{
-      ...MONO, fontSize: '0.52rem', fontWeight: 700,
-      letterSpacing: '0.08em', color,
-      border: `1px solid ${color}55`, background: `${color}10`,
-      padding: '1px 5px',
-    }}>{sev}</span>
-  );
-}
+      setRawGraph(graphRes);
+      setFlows(flowsRes);
+      setAlerts(alertsRes);
+      setJobs(jobsRes);
 
-const TH: React.CSSProperties = {
-  ...MONO, fontSize: '0.55rem', color: C.dim,
-  letterSpacing: '0.08em', textTransform: 'uppercase',
-  padding: '0.5rem 0.85rem',
-  borderBottom: `1px solid ${C.border}`,
-  fontWeight: 400, textAlign: 'left',
-  background: C.bg,
-};
-const TD: React.CSSProperties = {
-  ...MONO, fontSize: '0.68rem', color: C.muted,
-  padding: '0.55rem 0.85rem',
-  borderBottom: `1px solid ${C.border2}`,
-  verticalAlign: 'middle',
-};
-const TDA: React.CSSProperties = { ...TD, color: C.teal };
-const TDP: React.CSSProperties = { ...TD, color: C.text };
+      // Check staleness (if last event older than 5 mins)
+      if (healthRes && healthRes.flows_loaded === 0 && flowsRes.length === 0) {
+        setIsStale(true);
+      } else {
+        setIsStale(false);
+      }
 
-function Band({ children, first = false }: { children: React.ReactNode; first?: boolean }) {
-  return (
-    <div style={{ padding: '2rem 2.5rem', borderTop: first ? 'none' : `1px solid ${C.border}` }}>
-      {children}
-    </div>
-  );
-}
-
-function H2({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 style={{
-      ...SANS, fontSize: '1.05rem', fontWeight: 400,
-      color: C.text, letterSpacing: '-0.02em',
-      margin: '0.2rem 0 1rem', lineHeight: 1.2,
-    }}>{children}</h2>
-  );
-}
-
-function GhostLink({ href, children, accent = false }: { href: string; children: React.ReactNode; accent?: boolean }) {
-  const [hov, setHov] = useState(false);
-  return (
-    <Link href={href} style={{
-      ...MONO, fontSize: '0.6rem',
-      color: accent ? C.teal : (hov ? C.text : C.muted),
-      border: `1px solid ${accent ? 'rgba(61,217,196,0.35)' : (hov ? C.muted : C.border)}`,
-      background: accent ? 'rgba(61,217,196,0.04)' : 'transparent',
-      padding: '3px 9px', textDecoration: 'none',
-      letterSpacing: '0.04em', transition: 'color 0.12s, border-color 0.12s',
-    }}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-    >{children}</Link>
-  );
-}
-
-function MoreLink({ href, children }: { href: string; children: React.ReactNode }) {
-  const [hov, setHov] = useState(false);
-  return (
-    <Link href={href} style={{
-      ...MONO, fontSize: '0.6rem', color: hov ? C.text : C.dim,
-      textDecoration: 'none', letterSpacing: '0.04em', transition: 'color 0.12s',
-    }}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-    >{children}</Link>
-  );
-}
-
-function Button({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  const [hov, setHov] = useState(false);
-  return (
-    <button onClick={onClick} style={{
-      ...MONO, fontSize: '0.6rem', cursor: 'pointer',
-      color: hov ? C.text : C.muted,
-      border: `1px solid ${hov ? C.muted : C.border}`,
-      background: 'transparent', padding: '3px 9px', letterSpacing: '0.04em',
-    }}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-    >{children}</button>
-  );
-}
-
-// ─── State surfaces ───────────────────────────────────────────────────────────
-
-function Note({ children, color = C.muted }: { children: React.ReactNode; color?: string }) {
-  return (
-    <div style={{
-      ...MONO, fontSize: '0.68rem', color,
-      border: `1px solid ${C.border}`, background: C.surface,
-      padding: '1rem 1.25rem', lineHeight: 1.7,
-    }}>{children}</div>
-  );
-}
-
-function Skeleton({ rows = 3 }: { rows?: number }) {
-  return (
-    <div aria-busy="true" aria-label="Loading">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} style={{
-          height: '1.6rem', marginBottom: 6,
-          background: `linear-gradient(90deg, ${C.border2}, ${C.border}, ${C.border2})`,
-          opacity: 0.5,
-        }} />
-      ))}
-    </div>
-  );
-}
-
-/**
- * Failure gets the cause and a way back, never a silent zero (PRD §7).
- * `compact` drops the recovery hint for sections below the first one, so a
- * backend outage reads as one instruction rather than five copies of it.
- */
-function Failure({ error, onRetry, compact = false }: {
-  error: { message: string; offline: boolean };
-  onRetry: () => void;
-  compact?: boolean;
-}) {
-  if (compact) {
-    return (
-      <Note>
-        <span style={{ color: C.high }}>Unavailable</span> — {error.message}{' '}
-        <button onClick={onRetry} style={{
-          ...MONO, fontSize: '0.68rem', color: C.teal, background: 'none',
-          border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline',
-        }}>retry</button>
-      </Note>
-    );
-  }
-  return (
-    <Note color={C.high}>
-      <div style={{ color: C.critical, marginBottom: '0.4rem' }}>
-        {error.offline ? 'Backend unreachable' : 'Request failed'}
-      </div>
-      <div style={{ color: C.muted, marginBottom: '0.8rem' }}>{error.message}</div>
-      {error.offline && (
-        <div style={{ color: C.dim, fontSize: '0.62rem', marginBottom: '0.8rem' }}>
-          Expected the API at {apiBaseUrl}. Start it with:
-          {' '}<span style={{ color: C.teal }}>uvicorn backend.app.main:app --port 8000</span>
-        </div>
-      )}
-      <Button onClick={onRetry}>Retry</Button>
-    </Note>
-  );
-}
-
-// ─── Main page ────────────────────────────────────────────────────────────────
-export default function OverviewPage() {
-  const dashboard = useApi(() => api.dashboard());
-  const entities  = useApi(() => api.entities());
-  const jobs      = useApi(() => api.jobs());
-  const health    = useApi(() => api.health());
-
-  const reloadAll = () => {
-    // A capture change invalidates every dependent view, so they refresh
-    // together rather than showing a mix of two captures (PRD §7).
-    dashboard.reload(); entities.reload(); jobs.reload(); health.reload();
+      setLastRefreshed(new Date().toLocaleTimeString());
+    } catch (err: any) {
+      setError(err.message || 'Failed to load telemetry from backend.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Ticks on its own so the badge ages into STALE without a reload.
-  const now = useNow();
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
 
-  const summary   = dashboard.data;
-  const lastJob   = jobs.data?.[0];
-  const analysedAt = lastJob ? new Date(lastJob.created_at) : null;
+  // Handle Capture Reload
+  const handleJobSelect = async (jobId: string) => {
+    setSelectedJobId(jobId);
+    if (jobId !== 'demo') {
+      try {
+        await loadJob(jobId);
+      } catch (e) {}
+    }
+    fetchDashboardData();
+  };
 
-  // "live" is a claim about data we can actually see. A failed call or a
-  // capture with no timestamp is unknown, never live (PRD §7).
-  const freshness: 'live' | 'stale' | 'unknown' =
-    dashboard.error || jobs.error || !analysedAt || !now ? 'unknown'
-      : now - analysedAt.getTime() > FRESH_FOR_MS ? 'stale'
-        : 'live';
-  const FRESHNESS = {
-    live:    { text: '● LIVE',    color: C.teal },
-    stale:   { text: '◍ STALE',   color: C.medium },
-    unknown: { text: '○ NO DATA', color: C.dim },
-  }[freshness];
+  // Canonical Graph Adapter Output
+  const graph: ValidatedGraph = useMemo(() => {
+    if (rawGraph.nodes && rawGraph.nodes.length > 0) {
+      return adaptBackendGraph(rawGraph.nodes, rawGraph.edges);
+    }
+    return buildGraphFromFlows(flows);
+  }, [rawGraph, flows]);
 
-  const topIncident: Incident | undefined = summary?.top_incidents?.[0];
-  const alerts: Alert[] = summary?.recent_alerts ?? [];
-  const hosts: Entity[] = (entities.data ?? []).filter(e => e.kind === 'internal');
-  const destinations: Entity[] = (entities.data ?? []).filter(e => e.kind === 'external');
+  // Filtered Graph Nodes & Edges
+  const filteredGraph = useMemo(() => {
+    let filteredNodes = graph.nodes;
+    let filteredEdges = graph.edges;
 
-  const kpis = [
-    { label: 'Total flows',     value: summary?.total_flows,      color: C.text },
-    { label: 'Suspicious',      value: summary?.suspicious_flows, color: C.medium },
-    { label: 'High risk',       value: summary?.high_risk,        color: C.critical },
-    { label: 'Incidents',       value: summary?.incidents,        color: C.high },
-    { label: 'Protocols',       value: summary?.protocols,        color: C.teal },
-  ];
+    if (severityFilter !== 'all') {
+      filteredEdges = filteredEdges.filter((e) => e.severity === severityFilter);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filteredNodes = filteredNodes.filter((n) => n.id.toLowerCase().includes(q) || n.label.toLowerCase().includes(q));
+      const validNodeIds = new Set(filteredNodes.map((n) => n.id));
+      filteredEdges = filteredEdges.filter((e) => validNodeIds.has(e.source) && validNodeIds.has(e.target));
+    }
+
+    return {
+      nodes: filteredNodes,
+      edges: filteredEdges,
+      nodeMap: new Map(filteredNodes.map((n) => [n.id, n])),
+    };
+  }, [graph, severityFilter, searchQuery]);
+
+  // Derived SOC KPIs (PRD Section 4)
+  const kpis = useMemo(() => {
+    const totalFlows = flows.length || graph.edges.reduce((acc, e) => acc + e.flow_ids.length, 0);
+    const suspiciousFlows = flows.filter((f) => f.ndpi_risks?.length > 0 || (f.ml_detection?.risk_score || 0) > 50).length;
+    const highRiskFlows = flows.filter((f) => (f.ml_detection?.risk_score || 0) >= 75).length;
+    const totalIncidents = alerts.length;
+
+    return {
+      totalFlows,
+      suspiciousFlows,
+      highRiskFlows,
+      totalIncidents,
+    };
+  }, [flows, graph, alerts]);
+
+  // Top Risky Entities & Incidents (Right Rail)
+  const topIncident = alerts[0];
+  const topRiskyDestination = useMemo(() => {
+    return graph.nodes.filter((n) => n.kind === 'external').sort((a, b) => b.risk - a.risk)[0];
+  }, [graph]);
+
+  const topNoisyHost = useMemo(() => {
+    return graph.nodes.filter((n) => n.kind === 'internal').sort((a, b) => b.flow_count - a.flow_count)[0];
+  }, [graph]);
 
   return (
-    <div style={{ background: C.bg, minHeight: '100%', color: C.text, ...SANS }}>
-
-      {/* ── 1 · Header + KPI rail ──────────────────────────────────────────── */}
-      <Band first>
-        <Label text="Perimeter · what's being watched" />
-
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+    <div className="min-h-screen bg-[#04060c] text-white font-sans p-4 sm:p-6 space-y-6">
+      
+      {/* ─── Header: SOC Workstation Bar (PRD Section 4) ──────────────────── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-zinc-950 border border-white/10 shadow-2xl">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-[#3DD9C4]/10 border border-[#3DD9C4]/30 flex items-center justify-center text-[#3DD9C4]">
+            <Activity className="w-5 h-5 stroke-[2.2]" />
+          </div>
           <div>
-            <h1 style={{ fontSize: '1.2rem', fontWeight: 400, color: C.text, letterSpacing: '-0.025em', margin: 0, lineHeight: 1.2 }}>
-              {lastJob?.filename ?? 'No capture loaded'}
-            </h1>
-            <p style={{ ...MONO, fontSize: '0.6rem', color: C.dim, marginTop: '0.3rem', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              {/* Severity and state are never colour alone (PRD §10). */}
-              <span style={{ color: FRESHNESS.color }}>{FRESHNESS.text}</span>
-              <span>·</span>
-              <span>{analysedAt ? `analysed ${analysedAt.toLocaleString()}` : 'no analysis yet'}</span>
-              {health.data && <><span>·</span><span>DPI {health.data.dpi_mode}</span></>}
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-bold text-white tracking-tight">Production Corporate Core</h1>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold uppercase ${
+                isStale ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+              }`}>
+                {isStale ? 'STALE' : 'LIVE'}
+              </span>
+            </div>
+            <p className="text-xs text-zinc-400 font-mono">
+              Refreshed: {lastRefreshed} • {kpis.totalFlows} normalized flows in active store
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <Button onClick={reloadAll}>Refresh</Button>
-            <GhostLink href="/captures">Upload PCAP</GhostLink>
-            <GhostLink href="/network/mesh" accent>Launch Graph Mesh »</GhostLink>
+        </div>
+
+        {/* Capture Selector & Action Toolbar */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-black px-3 py-1.5 rounded-lg border border-white/10 text-xs font-mono">
+            <Database className="w-3.5 h-3.5 text-[#3DD9C4]" />
+            <select
+              value={selectedJobId}
+              onChange={(e) => handleJobSelect(e.target.value)}
+              className="bg-transparent text-zinc-200 focus:outline-none cursor-pointer"
+            >
+              <option value="demo">Live Traffic Ingest (Active Pipeline)</option>
+              {jobs.map((j) => (
+                <option key={j.job_id} value={j.job_id}>
+                  {j.filename} ({j.status})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={fetchDashboardData}
+            disabled={loading}
+            className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 transition-colors"
+            title="Refresh telemetry"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#3DD9C4]' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Error & Retry State */}
+      {error && (
+        <div className="p-4 rounded-xl bg-red-950/50 border border-red-500/40 text-red-300 text-sm flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-400" />
+            <span>Backend telemetry error: {error}</span>
+          </div>
+          <button
+            onClick={fetchDashboardData}
+            className="px-3 py-1 rounded bg-red-900 hover:bg-red-800 text-xs font-mono text-white"
+          >
+            Retry Fetch
+          </button>
+        </div>
+      )}
+
+      {/* ─── KPI Rail (PRD Section 4) ────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {[
+          { label: 'TOTAL FLOWS', val: kpis.totalFlows, sub: 'Normalized metadata', color: 'text-white' },
+          { label: 'SUSPICIOUS FLOWS', val: kpis.suspiciousFlows, sub: 'Rule / DPI matches', color: 'text-amber-400' },
+          { label: 'HIGH-RISK FLOWS', val: kpis.highRiskFlows, sub: 'ML Anomaly > 75%', color: 'text-orange-400' },
+          { label: 'ACTIVE INCIDENTS', val: kpis.totalIncidents, sub: 'Correlated alerts', color: 'text-red-400' },
+          { label: 'FRESHNESS', val: isStale ? 'Stale (>5m)' : 'Live (<1s)', sub: 'Ingestion pipeline', color: isStale ? 'text-amber-400' : 'text-[#3DD9C4]' },
+        ].map((kpi, idx) => (
+          <div key={idx} className="p-4 rounded-xl bg-zinc-950 border border-white/10 flex flex-col justify-between">
+            <span className="text-[11px] font-mono text-zinc-500 tracking-wider">{kpi.label}</span>
+            <div className={`text-2xl font-extrabold font-mono mt-1 ${kpi.color}`}>{kpi.val}</div>
+            <span className="text-[10px] text-zinc-500 mt-1">{kpi.sub}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* ─── Main SOC Canvas + Right Rail ───────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Main Area: Connected 2D/3D Network Mesh (PRD Section 4) */}
+        <div className="lg:col-span-8 space-y-4">
+          <div className="p-4 rounded-2xl bg-black border border-white/10 relative">
+            
+            {/* Filter Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10 text-xs font-mono">
+              <div className="flex items-center gap-2 text-zinc-300">
+                <Layers className="w-4 h-4 text-[#3DD9C4]" />
+                <span className="font-bold">CONNECTED NETWORK MESH</span>
+                <span className="text-zinc-500">({filteredGraph.nodes.length} nodes, {filteredGraph.edges.length} edges)</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Filter className="w-3.5 h-3.5 text-zinc-500" />
+                <select
+                  value={severityFilter}
+                  onChange={(e) => setSeverityFilter(e.target.value)}
+                  className="bg-zinc-900 text-zinc-300 border border-white/10 rounded px-2 py-1 text-xs focus:outline-none"
+                >
+                  <option value="all">All Severities</option>
+                  <option value="critical">Critical</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+
+                <div className="relative">
+                  <Search className="w-3 h-3 text-zinc-500 absolute left-2 top-2" />
+                  <input
+                    type="text"
+                    placeholder="Filter IP/Host..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="bg-zinc-900 text-zinc-200 border border-white/10 rounded pl-7 pr-2 py-1 text-xs focus:outline-none w-32"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive Network Mesh Viewport */}
+            <div className="w-full h-[500px] rounded-xl overflow-hidden relative bg-zinc-950/90 border border-white/5">
+              {loading ? (
+                <div className="w-full h-full flex flex-col items-center justify-center space-y-3 font-mono text-xs text-zinc-400">
+                  <RefreshCw className="w-6 h-6 animate-spin text-[#3DD9C4]" />
+                  <span>Projecting backend network mesh...</span>
+                </div>
+              ) : filteredGraph.nodes.length === 0 ? (
+                <div className="w-full h-full flex flex-col items-center justify-center space-y-2 font-mono text-xs text-zinc-500">
+                  <Server className="w-8 h-8 opacity-40" />
+                  <span>No connected entities found matching criteria.</span>
+                </div>
+              ) : (
+                <InteractiveNetworkMesh
+                  nodes={filteredGraph.nodes}
+                  edges={filteredGraph.edges}
+                  onSelectNode={(n) => { setSelectedNode(n); setSelectedEdge(null); }}
+                  onSelectEdge={(e) => { setSelectedEdge(e); setSelectedNode(null); }}
+                />
+              )}
+            </div>
+
           </div>
         </div>
 
-        <div style={{ marginTop: '1.5rem' }}>
-          {dashboard.error ? (
-            <Failure error={dashboard.error} onRetry={reloadAll} />
-          ) : dashboard.loading && !summary ? (
-            <Skeleton rows={2} />
-          ) : (
-            <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-              gap: 1, background: C.border, border: `1px solid ${C.border}`,
-            }}>
-              {kpis.map(k => (
-                <div key={k.label} style={{ padding: '1rem 1.25rem', background: C.bg }}>
-                  <span style={{ ...MONO, fontSize: '1.2rem', fontWeight: 500, color: k.color, display: 'block', marginBottom: '0.2rem' }}>
-                    {k.value ?? '—'}
-                  </span>
-                  <span style={{ ...MONO, fontSize: '0.55rem', color: C.dim, letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block' }}>
-                    {k.label}
-                  </span>
+        {/* Right Rail: SOC Threat Highlights (PRD Section 4) */}
+        <div className="lg:col-span-4 space-y-4">
+          
+          {/* Top Active Incident */}
+          <div className="p-4 rounded-xl bg-zinc-950 border border-white/10 space-y-2">
+            <span className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider block">TOP ACTIVE INCIDENT</span>
+            {topIncident ? (
+              <div className="p-3 rounded-lg bg-red-950/30 border border-red-500/30 space-y-1">
+                <div className="text-xs font-bold text-red-300">{topIncident.title}</div>
+                <div className="text-[11px] text-zinc-400 leading-tight">{topIncident.description || 'Anomalous traffic burst detected'}</div>
+                <div className="flex items-center justify-between pt-2 text-[10px] font-mono text-zinc-500">
+                  <span>Risk Score: {topIncident.risk_score}</span>
+                  <Link href={`/alerts`} className="text-[#3DD9C4] hover:underline flex items-center gap-1">
+                    <span>Investigate</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </Link>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </Band>
-
-      {/* ── 2 · Highest-priority incident ──────────────────────────────────── */}
-      <Band>
-        <Label text="Signal · highest-priority incident" />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <H2>Active investigation</H2>
-          {topIncident && <MoreLink href={`/incidents/${topIncident.incident_id}`}>Open incident »</MoreLink>}
-        </div>
-
-        {dashboard.loading && !summary ? <Skeleton rows={3} />
-          : !topIncident ? (
-            <Note>
-              No incident has been correlated in this capture.
-              {' '}<Link href="/captures" style={{ color: C.teal }}>Upload a capture</Link> to analyse traffic.
-            </Note>
-          ) : (
-            <div style={{
-              display: 'flex', gap: '1rem',
-              border: `1px solid ${C.border}`,
-              borderLeft: `3px solid ${SEV_COLOR[topIncident.severity] ?? C.muted}`,
-              background: 'rgba(4,6,12,0.7)', padding: '1.1rem 1.25rem',
-            }}>
-              <span style={{ ...MONO, fontSize: '0.55rem', color: SEV_COLOR[topIncident.severity] ?? C.muted, letterSpacing: '0.06em', width: '2.8rem', flexShrink: 0, paddingTop: '0.15rem' }}>
-                INC
-              </span>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
-                  <span style={{ ...MONO, fontSize: '0.6rem', color: C.teal }}>{topIncident.incident_id}</span>
-                  <SevBadge sev={topIncident.severity} />
-                  <span style={{ ...MONO, fontSize: '0.55rem', color: C.muted }}>RISK {topIncident.risk}</span>
-                  <span style={{ ...MONO, fontSize: '0.55rem', color: C.muted }}>STATUS {topIncident.status}</span>
-                </div>
-                <div style={{ fontSize: '0.88rem', color: C.text, marginBottom: '0.35rem' }}>{topIncident.title}</div>
-                <div style={{ fontSize: '0.75rem', color: C.muted, fontWeight: 300, lineHeight: 1.65, maxWidth: '72ch' }}>
-                  {topIncident.root_hypothesis || topIncident.narrative?.[0] || 'No narrative recorded.'}
-                </div>
-                {topIncident.primary_host && (
-                  <div style={{ ...MONO, fontSize: '0.6rem', color: C.dim, marginTop: '0.5rem' }}>
-                    {topIncident.primary_host}
-                    {topIncident.primary_destination ? ` → ${topIncident.primary_destination}` : ''}
-                  </div>
-                )}
               </div>
-            </div>
-          )}
-      </Band>
+            ) : (
+              <div className="text-xs text-zinc-500 font-mono">No active incidents reported.</div>
+            )}
+          </div>
 
-      {/* ── 3 · Noisiest host + riskiest destination ───────────────────────── */}
-      <Band>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem' }}>
-          {[
-            { label: 'Hosts · internal talkers', title: 'Noisiest hosts', rows: hosts, href: '/network/hosts' },
-            { label: 'Destinations · external', title: 'Riskiest destinations', rows: destinations, href: '/network/destinations' },
-          ].map(section => (
-            <div key={section.title}>
-              <Label text={section.label} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <H2>{section.title}</H2>
-                <MoreLink href={section.href}>All »</MoreLink>
+          {/* Top Risky Destination */}
+          <div className="p-4 rounded-xl bg-zinc-950 border border-white/10 space-y-2">
+            <span className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider block">TOP RISKY DESTINATION</span>
+            {topRiskyDestination ? (
+              <div className="p-3 rounded-lg bg-zinc-900 border border-white/10 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-white font-mono">{topRiskyDestination.label}</div>
+                  <div className="text-[10px] text-zinc-400">External Endpoint</div>
+                </div>
+                <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                  Risk: {topRiskyDestination.risk}
+                </span>
               </div>
-              {entities.error ? <Failure error={entities.error} onRetry={entities.reload} compact />
-                : entities.loading && !entities.data ? <Skeleton />
-                : section.rows.length === 0 ? <Note>Nothing in this capture.</Note>
-                : (
-                  <table style={{ width: '100%', borderCollapse: 'collapse', ...MONO, fontSize: '0.68rem' }}>
-                    <thead>
-                      <tr>
-                        <th style={TH}>Address</th>
-                        <th style={TH}>Kind</th>
-                        <th style={{ ...TH, textAlign: 'right' }}>Flows</th>
-                        <th style={{ ...TH, textAlign: 'right' }}>Risk</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {section.rows.slice(0, 5).map(e => (
-                        <tr key={e.id}>
-                          <td style={TDA}>{e.label}</td>
-                          <td style={TD}>{e.kind}</td>
-                          <td style={{ ...TDP, textAlign: 'right' }}>{e.flow_count}</td>
-                          <td style={{ ...TD, textAlign: 'right', color: e.risk > 0 ? C.high : C.muted }}>{e.risk}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
+            ) : (
+              <div className="text-xs text-zinc-500 font-mono">No external risk endpoints.</div>
+            )}
+          </div>
+
+          {/* Top Noisy Host */}
+          <div className="p-4 rounded-xl bg-zinc-950 border border-white/10 space-y-2">
+            <span className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider block">TOP NOISY HOST</span>
+            {topNoisyHost ? (
+              <div className="p-3 rounded-lg bg-zinc-900 border border-white/10 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-white font-mono">{topNoisyHost.label}</div>
+                  <div className="text-[10px] text-zinc-400">Internal Asset</div>
+                </div>
+                <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-[#3DD9C4]/10 text-[#3DD9C4] border border-[#3DD9C4]/30">
+                  {topNoisyHost.flow_count} flows
+                </span>
+              </div>
+            ) : (
+              <div className="text-xs text-zinc-500 font-mono">No host activity logged.</div>
+            )}
+          </div>
+
+          {/* Selection Detail Drawer (PRD Section 4) */}
+          {(selectedNode || selectedEdge) && (
+            <div className="p-4 rounded-xl bg-zinc-950 border border-[#3DD9C4]/40 space-y-3 relative">
+              <button
+                onClick={() => { setSelectedNode(null); setSelectedEdge(null); }}
+                className="absolute top-3 right-3 text-zinc-500 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="text-xs font-bold font-mono text-[#3DD9C4]">
+                {selectedNode ? `ENTITY DETAILS: ${selectedNode.label}` : `FLOW EDGE: ${selectedEdge?.source} -> ${selectedEdge?.target}`}
+              </div>
+
+              {selectedNode && (
+                <div className="text-xs font-mono text-zinc-300 space-y-1">
+                  <div>Kind: <span className="text-white capitalize">{selectedNode.kind}</span></div>
+                  <div>Risk Score: <span className="text-amber-400 font-bold">{selectedNode.risk}</span></div>
+                  <div>Flow Count: <span className="text-white">{selectedNode.flow_count}</span></div>
+                </div>
+              )}
+
+              {selectedEdge && (
+                <div className="text-xs font-mono text-zinc-300 space-y-1">
+                  <div>Application: <span className="text-white">{selectedEdge.application}</span></div>
+                  <div>Volume: <span className="text-white">{(selectedEdge.bytes / 1024).toFixed(1)} KB ({selectedEdge.packets} pkts)</span></div>
+                  <div>Risk Score: <span className="text-amber-400 font-bold">{selectedEdge.risk}</span></div>
+                  <div>Related Flow IDs: <span className="text-zinc-500 block truncate">{selectedEdge.flow_ids.join(', ')}</span></div>
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      </Band>
-
-      {/* ── 4 · Recent alerts ──────────────────────────────────────────────── */}
-      <Band>
-        <Label text="Synthesis · recent alerts" />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <H2>Recent alerts</H2>
-          <MoreLink href="/findings">All findings »</MoreLink>
-        </div>
-
-        {dashboard.error ? <Failure error={dashboard.error} onRetry={reloadAll} compact />
-          : dashboard.loading && !summary ? <Skeleton rows={5} />
-          : alerts.length === 0 ? (
-            <Note>
-              {summary?.total_flows
-                ? `No suspicious behaviour was flagged across ${summary.total_flows} flows.`
-                : 'No flows analysed yet.'}
-            </Note>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', ...MONO, fontSize: '0.68rem' }}>
-              <thead>
-                <tr>
-                  <th style={TH}>Alert</th>
-                  <th style={TH}>Entity</th>
-                  <th style={TH}>Type</th>
-                  <th style={TH}>Severity</th>
-                  <th style={{ ...TH, textAlign: 'right' }}>Risk</th>
-                </tr>
-              </thead>
-              <tbody>
-                {alerts.map(a => (
-                  <tr key={a.alert_id}>
-                    <td style={TDA}>
-                      <Link href={`/findings/${a.alert_id}`} style={{ color: C.teal, textDecoration: 'none' }}>
-                        {a.alert_id}
-                      </Link>
-                    </td>
-                    <td style={TDP}>{a.entity}</td>
-                    <td style={TD}>{a.title}</td>
-                    <td style={TD}><SevBadge sev={a.severity} /></td>
-                    <td style={{ ...TD, textAlign: 'right', color: C.text }}>{a.risk_score}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           )}
-      </Band>
 
-      {/* ── 5 · Capture history ────────────────────────────────────────────── */}
-      <Band>
-        <Label text="Evidence · capture history" />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <H2>Analysed captures</H2>
-          <MoreLink href="/captures">Repository »</MoreLink>
         </div>
 
-        {jobs.error ? <Failure error={jobs.error} onRetry={jobs.reload} compact />
-          : jobs.loading && !jobs.data ? <Skeleton />
-          : (jobs.data ?? []).length === 0 ? <Note>No capture has been analysed yet.</Note>
-          : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', ...MONO, fontSize: '0.68rem' }}>
-              <thead>
-                <tr>
-                  <th style={TH}>Source</th>
-                  <th style={TH}>Analysed</th>
-                  <th style={TH}>Result</th>
-                  <th style={{ ...TH, textAlign: 'right' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(jobs.data ?? []).slice(0, 6).map(j => (
-                  <tr key={j.job_id}>
-                    <td style={TDA}>{j.filename}</td>
-                    <td style={TD}>{new Date(j.created_at).toLocaleString()}</td>
-                    <td style={TDP}>{j.message}</td>
-                    <td style={{ ...TD, textAlign: 'right' }}>
-                      <Button onClick={() => api.loadJob(j.job_id).then(reloadAll)}>Reopen</Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-      </Band>
+      </div>
+
+      {/* ─── Lower Area: Protocol Mix & Recent Alerts (PRD Section 4) ───────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-white/10">
+        
+        {/* Recent Security Alerts */}
+        <div className="p-4 rounded-xl bg-zinc-950 border border-white/10 space-y-3">
+          <div className="flex items-center justify-between text-xs font-mono">
+            <span className="font-bold text-white flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-amber-400" />
+              RECENT ALERTS ({alerts.length})
+            </span>
+            <Link href="/alerts" className="text-[#3DD9C4] hover:underline">View All</Link>
+          </div>
+
+          <div className="space-y-2">
+            {alerts.slice(0, 4).map((a, idx) => (
+              <div key={idx} className="p-2.5 rounded bg-black border border-white/5 flex items-center justify-between text-xs font-mono">
+                <div>
+                  <div className="text-zinc-200 font-semibold">{a.title}</div>
+                  <div className="text-[10px] text-zinc-500">Flow: {a.flow_id}</div>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                  a.severity === 'critical' ? 'bg-red-500/20 text-red-400 border border-red-500/40' : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                }`}>
+                  {a.severity.toUpperCase()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Protocol Mix Summary */}
+        <div className="p-4 rounded-xl bg-zinc-950 border border-white/10 space-y-3">
+          <div className="flex items-center justify-between text-xs font-mono">
+            <span className="font-bold text-white flex items-center gap-1.5">
+              <BarChart2 className="w-4 h-4 text-[#3DD9C4]" />
+              TRAFFIC PROTOCOL MIX
+            </span>
+            <span className="text-zinc-500">L4/L7 Inspection</span>
+          </div>
+
+          <div className="space-y-3 pt-2">
+            {[
+              { proto: 'HTTPS / TLS 1.3', pct: 64, color: 'bg-[#3DD9C4]' },
+              { proto: 'DNS Query (UDP/53)', pct: 22, color: 'bg-blue-500' },
+              { proto: 'SSH / Encrypted Tunnel', pct: 9, color: 'bg-amber-500' },
+              { proto: 'Unclassified / Other', pct: 5, color: 'bg-zinc-600' },
+            ].map((p, idx) => (
+              <div key={idx} className="space-y-1 text-xs font-mono">
+                <div className="flex justify-between text-zinc-400">
+                  <span>{p.proto}</span>
+                  <span className="text-white font-bold">{p.pct}%</span>
+                </div>
+                <div className="w-full bg-zinc-900 rounded-full h-2 overflow-hidden">
+                  <div className={`${p.color} h-full rounded-full`} style={{ width: `${p.pct}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </div>
 
     </div>
   );

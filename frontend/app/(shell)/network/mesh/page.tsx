@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import NetworkMesh from '@/components/network/NetworkMesh';
+import React, { useEffect, useState, useMemo } from 'react';
+import Link from 'next/link';
 import {
   Network,
   Filter,
@@ -14,181 +14,220 @@ import {
   Globe,
   Server,
   Zap,
+  ArrowRight,
+  X
 } from 'lucide-react';
+import { getNetworkGraph, getFlows, getAlerts, CanonicalFlow, CanonicalAlert } from '@/lib/api';
+import { adaptBackendGraph, buildGraphFromFlows, ValidatedGraph, RenderGraphNode, RenderGraphEdge } from '@/lib/graph-adapter';
+import { InteractiveNetworkMesh } from '@/components/network/InteractiveNetworkMesh';
 
 export default function NetworkMeshPage() {
-  const [selectedHostFilter, setSelectedHostFilter] = useState('all');
-  const [minRiskScore, setMinRiskScore] = useState(0);
-  const [protocolFilter, setProtocolFilter] = useState('all');
-  const [rarityFilter, setRarityFilter] = useState('all');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'traffic' | 'threat' | 'incident' | 'host'>('threat');
+  const [severityFilter, setSeverityFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const [rawGraph, setRawGraph] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] });
+  const [flows, setFlows] = useState<CanonicalFlow[]>([]);
+  const [alerts, setAlerts] = useState<CanonicalAlert[]>([]);
+
+  const [selectedNode, setSelectedNode] = useState<RenderGraphNode | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<RenderGraphEdge | null>(null);
+
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [gRes, fRes, aRes] = await Promise.all([
+        getNetworkGraph().catch(() => ({ nodes: [], edges: [] })),
+        getFlows().catch(() => []),
+        getAlerts().catch(() => []),
+      ]);
+      setRawGraph(gRes);
+      setFlows(fRes);
+      setAlerts(aRes);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load graph data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const graph: ValidatedGraph = useMemo(() => {
+    if (rawGraph.nodes && rawGraph.nodes.length > 0) {
+      return adaptBackendGraph(rawGraph.nodes, rawGraph.edges);
+    }
+    return buildGraphFromFlows(flows);
+  }, [rawGraph, flows]);
+
+  const filteredGraph = useMemo(() => {
+    let nodes = graph.nodes;
+    let edges = graph.edges;
+
+    if (severityFilter !== 'all') {
+      edges = edges.filter((e) => e.severity === severityFilter);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      nodes = nodes.filter((n) => n.id.toLowerCase().includes(q) || n.label.toLowerCase().includes(q));
+      const validNodeIds = new Set(nodes.map((n) => n.id));
+      edges = edges.filter((e) => validNodeIds.has(e.source) && validNodeIds.has(e.target));
+    }
+
+    return {
+      nodes,
+      edges,
+      nodeMap: new Map(nodes.map((n) => [n.id, n])),
+    };
+  }, [graph, severityFilter, searchQuery]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden bg-slate-950 text-slate-100">
+    <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden bg-[#04060c] text-slate-100 font-sans">
+      
       {/* Top Filter & Toolbar */}
-      <div className="p-4 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md flex flex-wrap items-center justify-between gap-4 z-20">
+      <div className="p-4 border-b border-white/10 bg-zinc-950/90 backdrop-blur-md flex flex-wrap items-center justify-between gap-4 z-20">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
-            <Network className="w-5 h-5" />
+          <div className="p-2 rounded-lg bg-[#3DD9C4]/10 border border-[#3DD9C4]/30 text-[#3DD9C4]">
+            <Network className="w-5 h-5 stroke-[2.2]" />
           </div>
           <div>
             <h1 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
               Flagship Network Mesh Topology
-              <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-mono">
-                Interactive Graph
+              <span className="text-[10px] px-2 py-0.5 rounded bg-[#3DD9C4]/20 border border-[#3DD9C4]/40 text-[#3DD9C4] font-mono">
+                Interactive Graph ({filteredGraph.nodes.length} nodes, {filteredGraph.edges.length} edges)
               </span>
             </h1>
-            <p className="text-xs text-slate-400">
-              Real-time graph visualization of internal hosts, external destinations, and C2 traffic flows
+            <p className="text-xs text-zinc-400">
+              Real-time graph visualization of internal hosts, services, and external destination flows
             </p>
           </div>
         </div>
 
-        {/* Filters Controls */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* View Mode Toggle */}
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
-            <button
-              onClick={() => setMode('threat')}
-              className={`px-3 py-1 rounded font-medium transition-colors ${
-                mode === 'threat' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Threat Mesh
-            </button>
-            <button
-              onClick={() => setMode('traffic')}
-              className={`px-3 py-1 rounded font-medium transition-colors ${
-                mode === 'traffic' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Traffic Density
-            </button>
-            <button
-              onClick={() => setMode('incident')}
-              className={`px-3 py-1 rounded font-medium transition-colors ${
-                mode === 'incident' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Incident Focus
-            </button>
+        {/* Controls */}
+        <div className="flex flex-wrap items-center gap-3 font-mono text-xs">
+          {/* Mode toggle */}
+          <div className="flex items-center gap-1 bg-black p-1 rounded-lg border border-white/10">
+            {(['threat', 'traffic', 'incident'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`px-3 py-1 rounded font-medium transition-colors capitalize ${
+                  mode === m ? 'bg-[#3DD9C4] text-black font-bold' : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                {m} Focus
+              </button>
+            ))}
           </div>
 
-          {/* Host Filter */}
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="text-slate-400">Host:</span>
+          {/* Severity filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-zinc-400">Severity:</span>
             <select
-              value={selectedHostFilter}
-              onChange={e => setSelectedHostFilter(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+              value={severityFilter}
+              onChange={(e) => setSeverityFilter(e.target.value)}
+              className="bg-black border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none"
             >
-              <option value="all">All Internal Hosts</option>
-              <option value="10.0.0.14">10.0.0.14 (FIN-WS-014)</option>
-              <option value="10.0.0.28">10.0.0.28 (DEV-WS-028)</option>
-              <option value="10.0.0.2">10.0.0.2 (CORE-DNS-01)</option>
+              <option value="all">All Severities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
             </select>
           </div>
 
-          {/* Min Risk Filter */}
-          <div className="flex items-center gap-2 text-xs bg-slate-950 px-3 py-1 rounded-lg border border-slate-800">
-            <span className="text-slate-400">Min Risk:</span>
+          {/* Search */}
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2" />
             <input
-              type="range"
-              min="0"
-              max="90"
-              step="10"
-              value={minRiskScore}
-              onChange={e => setMinRiskScore(Number(e.target.value))}
-              className="w-20 accent-cyan-500"
+              type="text"
+              placeholder="Search IP / Host..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-black border border-white/10 rounded-lg pl-8 pr-3 py-1 text-xs text-zinc-200 focus:outline-none w-36"
             />
-            <span className="font-mono text-cyan-400 font-bold w-6">{minRiskScore}+</span>
           </div>
 
-          {/* Protocol Filter */}
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="text-slate-400">Protocol:</span>
-            <select
-              value={protocolFilter}
-              onChange={e => setProtocolFilter(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
-            >
-              <option value="all">All Protocols</option>
-              <option value="tls">TLS 1.3 / HTTPS</option>
-              <option value="dns">DNS Queries</option>
-              <option value="tcp">Raw TCP</option>
-            </select>
-          </div>
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300"
+            title="Refresh graph"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#3DD9C4]' : ''}`} />
+          </button>
         </div>
       </div>
 
-      {/* Embedded Fullscreen Network Mesh Container */}
-      <div className="relative flex-1 w-full h-full bg-slate-950">
-        <NetworkMesh mode={mode} height="100%" showControls={true} showMinimap={true} />
-
-        {/* Legend Overlay Panel */}
-        <div className="absolute left-4 bottom-4 z-10 p-4 rounded-xl bg-slate-900/90 border border-slate-800 backdrop-blur-md space-y-3 max-w-xs shadow-2xl pointer-events-auto">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center justify-between">
-            <span>Topology Legend</span>
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-          </h3>
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-slate-300">
-                <span className="w-3 h-3 rounded bg-cyan-500 border border-cyan-400" />
-                Internal Host Workstation
-              </span>
-              <span className="font-mono text-[10px] text-slate-500">10.0.0.0/24</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-slate-300">
-                <span className="w-3 h-3 rounded bg-red-500 border border-red-400 animate-pulse" />
-                Critical C2 / Malicious IP
-              </span>
-              <span className="font-mono text-[10px] text-red-400">Rare Destination</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-slate-300">
-                <span className="w-3 h-3 rounded bg-orange-500 border border-orange-400" />
-                DNS Tunneling Destination
-              </span>
-              <span className="font-mono text-[10px] text-orange-400">High Entropy</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-slate-300">
-                <span className="w-3 h-3 rounded bg-slate-600 border border-slate-500" />
-                Legitimate CDN / Gateway
-              </span>
-              <span className="font-mono text-[10px] text-slate-400">Common</span>
-            </div>
+      {/* Main Interactive Mesh Canvas */}
+      <div className="relative flex-1 min-h-0 w-full bg-[#04060c]">
+        {loading ? (
+          <div className="w-full h-full flex flex-col items-center justify-center space-y-3 font-mono text-xs text-zinc-400">
+            <RefreshCw className="w-6 h-6 animate-spin text-[#3DD9C4]" />
+            <span>Parsing topology graph...</span>
           </div>
-        </div>
-
-        {/* Quick Stats Sidebar Overlay */}
-        <div className="absolute right-4 top-4 z-10 p-4 rounded-xl bg-slate-900/90 border border-slate-800 backdrop-blur-md space-y-3 w-64 shadow-2xl pointer-events-auto">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-            <Activity className="w-4 h-4 text-cyan-400" />
-            Graph Dynamics Stats
-          </h3>
-          <div className="space-y-2 text-xs font-mono">
-            <div className="flex justify-between py-1 border-b border-slate-800">
-              <span className="text-slate-400">Nodes Rendered:</span>
-              <span className="text-white font-bold">12 Nodes</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-slate-800">
-              <span className="text-slate-400">Edges Active:</span>
-              <span className="text-cyan-300 font-bold">18 Flows</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-slate-800">
-              <span className="text-slate-400">Beaconing Edges:</span>
-              <span className="text-red-400 font-bold">3 Beacon Streams</span>
-            </div>
-            <div className="flex justify-between py-1">
-              <span className="text-slate-400">DPI Engine:</span>
-              <span className="text-emerald-400">Active DPI v2.8</span>
-            </div>
+        ) : error ? (
+          <div className="w-full h-full flex flex-col items-center justify-center space-y-2 font-mono text-xs text-red-400">
+            <ShieldAlert className="w-8 h-8 opacity-80" />
+            <span>{error}</span>
           </div>
-        </div>
+        ) : (
+          <InteractiveNetworkMesh
+            nodes={filteredGraph.nodes}
+            edges={filteredGraph.edges}
+            onSelectNode={(n) => { setSelectedNode(n); setSelectedEdge(null); }}
+            onSelectEdge={(e) => { setSelectedEdge(e); setSelectedNode(null); }}
+          />
+        )}
+
+        {/* Drawer Detail Overlay */}
+        {(selectedNode || selectedEdge) && (
+          <div className="absolute right-4 top-4 z-30 p-4 rounded-xl bg-black/95 border border-[#3DD9C4]/40 backdrop-blur-xl text-xs font-mono shadow-2xl w-80 space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <span className="font-bold text-[#3DD9C4]">
+                {selectedNode ? `NODE: ${selectedNode.label}` : `EDGE: ${selectedEdge?.source} -> ${selectedEdge?.target}`}
+              </span>
+              <button
+                onClick={() => { setSelectedNode(null); setSelectedEdge(null); }}
+                className="text-zinc-500 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {selectedNode && (
+              <div className="space-y-1.5 text-zinc-300">
+                <div>Kind: <span className="text-white capitalize">{selectedNode.kind}</span></div>
+                <div>Risk Score: <span className="text-amber-400 font-bold">{selectedNode.risk}/100</span></div>
+                <div>Total Flows: <span className="text-white">{selectedNode.flow_count}</span></div>
+                <div className="pt-2 border-t border-white/10 flex justify-end">
+                  <Link href={`/flows`} className="text-[#3DD9C4] hover:underline flex items-center gap-1">
+                    <span>View Related Flows</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {selectedEdge && (
+              <div className="space-y-1.5 text-zinc-300">
+                <div>Application: <span className="text-white">{selectedEdge.application}</span></div>
+                <div>Data Transferred: <span className="text-white">{(selectedEdge.bytes / 1024).toFixed(1)} KB</span></div>
+                <div>Packets: <span className="text-white">{selectedEdge.packets}</span></div>
+                <div>Risk Score: <span className="text-amber-400 font-bold">{selectedEdge.risk}/100</span></div>
+                <div>Flow IDs: <span className="text-zinc-500 block truncate">{selectedEdge.flow_ids.join(', ')}</span></div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
     </div>
   );
 }

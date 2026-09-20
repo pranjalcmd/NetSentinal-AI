@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAppContext } from './AppShell';
 
+import { PrismLogoIcon } from '@/components/graphics/PrismLogo';
+
 const NAV = [
   {
     group: 'Monitor',
@@ -68,21 +70,17 @@ export function Sidebar() {
         alignItems: 'center',
         padding: '0 1.1rem',
         borderBottom: '1px solid #1A2230',
-        gap: '0.45rem',
+        gap: '0.5rem',
       }}>
-        <span style={{
-          width: 6, height: 6, borderRadius: '50%',
-          background: '#3DD9C4', boxShadow: '0 0 8px #3DD9C4',
-          flexShrink: 0,
-        }} />
-        <span style={{ fontSize: '0.72rem', fontWeight: 500, color: '#E4E8EE', letterSpacing: '-0.01em' }}>
-          NetSentinal
+        <PrismLogoIcon size={20} />
+        <span style={{ fontSize: '0.88rem', fontWeight: 800, color: '#FFFFFF', letterSpacing: '0.08em' }}>
+          PRISM
         </span>
         <span style={{
-          fontSize: '0.52rem', color: '#3DD9C4',
-          border: '1px solid rgba(61,217,196,0.3)',
-          padding: '1px 4px', letterSpacing: '0.06em',
-        }}>AI</span>
+          fontSize: '0.50rem', color: '#3DD9C4',
+          border: '1px solid rgba(61,217,196,0.35)',
+          padding: '1px 5px', letterSpacing: '0.06em', borderRadius: '3px', fontWeight: 700
+        }}>SEC</span>
       </div>
 
       {/* ── Nav ──────────────────────────────────────────────────────── */}

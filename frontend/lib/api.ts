@@ -1,269 +1,291 @@
 /**
- * The single typed client for the NetSentinel backend.
- *
- * Every backend call in the app goes through this module. Components render
- * state; they do not build URLs or re-map responses, so a contract change has
- * one place to land.
- *
- * The types below mirror what the backend actually serves (snake_case, as sent
- * over the wire). They deliberately do not reuse `lib/types.ts`, which models a
- * richer product domain — sensors, engagements, per-flow capture ids — that the
- * API does not return. Mapping into it would mean inventing those fields.
+ * NetSentinel AI — Canonical Typed API Client
+ * Centralized API module for all FastAPI backend interactions (PRD Section 7).
  */
 
-const BASE = (process.env.NEXT_PUBLIC_API_BASE ?? 'http://127.0.0.1:8000').replace(/\/+$/, '')
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-/** How long any single request may hang before it becomes a retryable error. */
-const TIMEOUT_MS = 15_000
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Wire types — PRD §6 canonical contract
-// ─────────────────────────────────────────────────────────────────────────────
-
-export type Severity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
-
-export type Flow = {
-  flow_id: string
-  timestamp: string
-  source_ip: string
-  destination_ip: string
-  source_port?: number | null
-  destination_port?: number | null
-  transport?: string
-  application?: string
-  packets: number
-  bytes: number
-  duration_seconds: number
-  ndpi_risks: string[]
-  metadata: Record<string, unknown>
-  ml_detection?: Record<string, unknown>
+export class ApiError extends Error {
+  constructor(public status: number, message: string, public data?: any) {
+    super(message);
+    this.name = 'ApiError';
+  }
 }
 
-export type GraphNode = {
-  id: string
-  name: string
-  label: string
-  type: string
-  kind: 'internal' | 'service' | 'external' | 'unknown'
-  risk: number
-  flow_count: number
-  central: boolean
+export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const url = `${API_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  try {
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options?.headers || {}),
+      },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new ApiError(res.status, errorData.detail || `API Error ${res.status}`, errorData);
+    }
+
+    return res.json() as Promise<T>;
+  } catch (err: any) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError(0, err.message || 'Network unreachable');
+  }
 }
 
-export type GraphEdge = {
-  id: string
-  source: string
-  target: string
-  application: string
-  flow_ids: string[]
-  bytes: number
-  packets: number
-  risk: number
-  severity: Severity | null
-  suspicious: boolean
+// ─── API Response Types ───────────────────────────────────────────────────
+
+export interface HealthResponse {
+  status: string;
+  service: string;
+  dpi_mode: string;
+  ndpi_reader?: string;
+  ml_trained_model: boolean;
+  ai_provider: string;
+  ai_model: string;
+  ai_key_configured: boolean;
+  flows_loaded: number;
+  /** Not served by the current backend; present only on deployments that add it. */
+  version?: string;
+  alerts_loaded?: number;
+  jobs_run?: number;
+  ai_last_error?: string | null;
 }
 
-export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] }
-
-export type Entity = GraphNode & { connections: number }
-
-export type Alert = {
-  alert_id: string
-  flow_id: string
-  title: string
-  severity: Severity
-  risk_score: number
-  confidence: number
-  evidence: string[]
-  category: string
-  rule_ids: string[]
-  finding_ids: string[]
-  incident_id?: string | null
-  created_at: string
-  entity: string
-  type: string
-  time: string
+export interface CanonicalFlow {
+  flow_id: string;
+  timestamp: string;
+  source_ip: string;
+  destination_ip: string;
+  source_port?: number | null;
+  destination_port?: number | null;
+  transport?: string;
+  application?: string;
+  packets: number;
+  bytes: number;
+  duration_seconds: number;
+  ndpi_risks: string[];
+  metadata: Record<string, any>;
+  ml_detection?: Record<string, any>;
 }
 
-export type Incident = {
-  incident_id: string
-  title: string
-  severity: Severity
-  risk: number
-  confidence: number
-  status: string
-  primary_host: string | null
-  primary_destination: string | null
-  finding_ids: string[]
-  behavior_families: string[]
-  narrative: string[]
-  root_hypothesis: string
-  recommendations: string[]
-  readiness: string
-  created_at: string
-  [key: string]: unknown
+export type SeverityKey = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+export interface CanonicalAlert {
+  id: string;
+  alert_id: string;
+  title: string;
+  description?: string;
+  /** Always lowercase — normalized at the boundary by `normalizeAlert`. */
+  severity: SeverityKey;
+  risk_score: number;
+  flow_id: string;
+  source_ip?: string;
+  destination_ip?: string;
+  timestamp?: string;
+  category?: string;
+  evidence?: any[];
+  /** Aliases the backend projects onto every alert for table rendering. */
+  entity?: string;
+  type?: string;
+  risk?: number;
+  time?: string;
+  incident_id?: string | null;
+  finding_ids?: string[];
 }
-
-export type Finding = {
-  finding_id: string
-  severity: Severity
-  risk: number
-  summary: string
-  category: string
-  related_flows: string[]
-  [key: string]: unknown
-}
-
-export type DashboardSummary = {
-  total_flows: number
-  suspicious_flows: number
-  high_risk: number
-  protocols: number
-  incidents: number
-  risk_distribution: Record<Severity, number>
-  protocol_distribution: Record<string, number>
-  recent_alerts: Alert[]
-  top_incidents: Incident[]
-  capture?: { capture_id: string; dpi_mode: string; [key: string]: unknown }
-}
-
-export type Health = {
-  status: string
-  service: string
-  dpi_mode: string
-  ml_trained_model: boolean
-  ai_provider: string
-  ai_key_configured: boolean
-  ai_last_error: string | null
-  flows_loaded: number
-}
-
-export type Job = {
-  job_id: string
-  filename: string
-  status: string
-  message: string
-  created_at: string
-  summary?: DashboardSummary
-}
-
-export type AiAnswer = { answer?: string; provider?: string; [key: string]: unknown }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Transport
-// ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * A failed call, carrying a cause the UI can show verbatim (PRD §7).
- * `status` is 0 when the request never reached the backend at all, which is
- * the "backend is down" state rather than a rejected request.
+ * The backend speaks UPPERCASE severity; every component here compares against
+ * lowercase. Normalizing once at the boundary keeps that mismatch from having
+ * to be remembered at each of the call sites.
  */
-export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-    readonly path: string
-  ) {
-    super(message)
-    this.name = 'ApiError'
-  }
-
-  /** True when the backend could not be reached, as opposed to refusing. */
-  get offline(): boolean {
-    return this.status === 0
-  }
+export function normalizeAlert(raw: any): CanonicalAlert {
+  return {
+    ...raw,
+    id: raw.id ?? raw.alert_id,
+    alert_id: raw.alert_id ?? raw.id,
+    severity: String(raw.severity ?? 'info').toLowerCase() as SeverityKey,
+  };
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  let response: Response
-  try {
-    response = await fetch(`${BASE}${path}`, {
-      ...init,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    })
-  } catch (cause) {
-    const reason =
-      cause instanceof DOMException && cause.name === 'TimeoutError'
-        ? `No response within ${TIMEOUT_MS / 1000}s`
-        : `Cannot reach the API at ${BASE}`
-    throw new ApiError(0, reason, path)
-  }
-
-  if (!response.ok) {
-    // FastAPI puts the human-readable cause in `detail`; fall back to the
-    // status text so the UI never has to show a bare number.
-    let detail = response.statusText
-    try {
-      const body = await response.json()
-      if (typeof body?.detail === 'string') detail = body.detail
-    } catch {
-      /* non-JSON error body — statusText is the best we have */
-    }
-    throw new ApiError(response.status, detail, path)
-  }
-
-  return response.json() as Promise<T>
+export interface RawBackendGraphNode {
+  id: string;
+  label?: string;
+  kind?: 'internal' | 'service' | 'external' | 'unknown';
+  risk?: number;
+  flow_count?: number;
+  ip?: string;
+  role?: string;
+  type?: string;
 }
 
-function post<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>(path, {
+export interface RawBackendGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  flow_ids: string[];
+  application?: string;
+  bytes: number;
+  packets: number;
+  risk: number;
+  severity?: string;
+}
+
+export interface BackendGraphResponse {
+  nodes: RawBackendGraphNode[];
+  edges: RawBackendGraphEdge[];
+}
+
+export interface AnalysisJob {
+  job_id: string;
+  filename: string;
+  status: 'pending' | 'running' | 'complete' | 'failed';
+  message: string;
+  summary: Record<string, any>;
+  created_at: string;
+  /** Not served by the current backend. */
+  kind?: string;
+  stage?: string;
+  progress?: number;
+  errors?: string[];
+}
+
+export interface GraphEntity {
+  id: string;
+  name: string;
+  label: string;
+  kind: 'internal' | 'service' | 'external' | 'unknown';
+  type: string;
+  risk: number;
+  flow_count: number;
+  connections: number;
+  central: boolean;
+}
+
+// ─── Canonical Endpoints (PRD Section 7) ──────────────────────────────────
+
+/** GET /api/health */
+export async function getHealth(): Promise<HealthResponse> {
+  return fetchApi<HealthResponse>('/api/health');
+}
+
+/** GET /api/dashboard */
+export async function getDashboard(): Promise<Record<string, any>> {
+  return fetchApi<Record<string, any>>('/api/dashboard');
+}
+
+/** GET /api/flows */
+export async function getFlows(): Promise<CanonicalFlow[]> {
+  return fetchApi<CanonicalFlow[]>('/api/flows');
+}
+
+/** GET /api/flows/{flow_id} */
+export async function getFlowDetail(flowId: string): Promise<CanonicalFlow> {
+  return fetchApi<CanonicalFlow>(`/api/flows/${flowId}`);
+}
+
+/** GET /api/network/graph */
+export async function getNetworkGraph(): Promise<BackendGraphResponse> {
+  return fetchApi<BackendGraphResponse>('/api/network/graph');
+}
+
+/** GET /api/entities */
+export async function getEntities(): Promise<GraphEntity[]> {
+  return fetchApi<GraphEntity[]>('/api/entities');
+}
+
+/** Same call, split the way the host/destination panels read it. */
+export async function getEntitiesSplit(): Promise<{ hosts: GraphEntity[]; destinations: GraphEntity[] }> {
+  const all = await getEntities();
+  return {
+    hosts: all.filter((e) => e.kind === 'internal' || e.kind === 'service'),
+    destinations: all.filter((e) => e.kind === 'external'),
+  };
+}
+
+/** GET /api/alerts */
+export async function getAlerts(): Promise<CanonicalAlert[]> {
+  return (await fetchApi<any[]>('/api/alerts')).map(normalizeAlert);
+}
+
+/** GET /api/alerts/{id} */
+export async function getAlertDetail(alertId: string): Promise<{ alert: CanonicalAlert; flow: CanonicalFlow | null; ai?: any }> {
+  const res = await fetchApi<any>(`/api/alerts/${alertId}`);
+  return { ...res, alert: normalizeAlert(res.alert) };
+}
+
+/** POST /api/alerts/{id}/explain */
+export async function explainAlert(alertId: string): Promise<Record<string, any>> {
+  return fetchApi<Record<string, any>>(`/api/alerts/${alertId}/explain`, {
     method: 'POST',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Endpoints — the canonical list in PRD §7
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const api = {
-  health: () => request<Health>('/api/health'),
-  dashboard: () => request<DashboardSummary>('/api/dashboard'),
-
-  flows: () => request<Flow[]>('/api/flows'),
-  flow: (flowId: string) => request<Flow>(`/api/flows/${encodeURIComponent(flowId)}`),
-
-  graph: () => request<Graph>('/api/network/graph'),
-  entities: () => request<Entity[]>('/api/entities'),
-
-  alerts: () => request<Alert[]>('/api/alerts'),
-  alert: (alertId: string) =>
-    request<{ alert: Alert; flow?: Flow; findings: Finding[]; incident?: Incident }>(
-      `/api/alerts/${encodeURIComponent(alertId)}`
-    ),
-  explainAlert: (alertId: string) =>
-    post<Record<string, unknown>>(`/api/alerts/${encodeURIComponent(alertId)}/explain`),
-
-  findings: () => request<Finding[]>('/api/findings'),
-  incidents: () => request<Incident[]>('/api/incidents'),
-  incident: (incidentId: string) =>
-    request<{ incident: Incident; findings: Finding[] }>(
-      `/api/incidents/${encodeURIComponent(incidentId)}`
-    ),
-
-  ask: (question: string) => post<AiAnswer>('/api/ai/ask', { question }),
-  report: () => post<Record<string, unknown>>('/api/ai/report'),
-
-  pathfinder: (from: string, to: string) =>
-    post<{ path: { name: string; type: string; risk: number }[]; hops: number; suspicious: number }>(
-      '/api/pathfinder',
-      { from, to }
-    ),
-
-  jobs: () => request<Job[]>('/api/jobs'),
-  loadJob: (jobId: string) =>
-    post<{ job_id: string; loaded: boolean; summary: DashboardSummary }>(
-      `/api/jobs/${encodeURIComponent(jobId)}/load`
-    ),
-
-  uploadPcap: (file: File) => {
-    const form = new FormData()
-    form.append('file', file)
-    // No Content-Type header on purpose: the browser must set the multipart
-    // boundary itself.
-    return request<Job>('/api/analyze/pcap', { method: 'POST', body: form })
-  },
+/** POST /api/ai/ask */
+export async function askAI(question: string): Promise<{ answer: string; evidence_used?: any[] }> {
+  return fetchApi<{ answer: string; evidence_used?: any[] }>('/api/ai/ask', {
+    method: 'POST',
+    body: JSON.stringify({ question }),
+  });
 }
 
-export const apiBaseUrl = BASE
+/** POST /api/ai/report */
+export async function generateReport(title = 'NetSentinel Incident Report'): Promise<Record<string, any>> {
+  return fetchApi<Record<string, any>>('/api/ai/report', {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  });
+}
+
+/** POST /api/pathfinder */
+export async function findPath(fromIp: string, toIp: string): Promise<Record<string, any>> {
+  return fetchApi<Record<string, any>>('/api/pathfinder', {
+    method: 'POST',
+    body: JSON.stringify({ from: fromIp, to: toIp }),
+  });
+}
+
+/** POST /api/analyze/pcap */
+export async function uploadPcap(file: File): Promise<AnalysisJob> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetch(`${API_BASE}/api/analyze/pcap`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new ApiError(res.status, err.detail || 'Upload failed');
+  }
+
+  return res.json() as Promise<AnalysisJob>;
+}
+
+/** GET /api/jobs */
+export async function getJobs(): Promise<AnalysisJob[]> {
+  return fetchApi<AnalysisJob[]>('/api/jobs');
+}
+
+/** POST /api/jobs/{id}/load */
+export async function loadJob(jobId: string): Promise<Record<string, any>> {
+  return fetchApi<Record<string, any>>(`/api/jobs/${jobId}/load`, {
+    method: 'POST',
+  });
+}
+
+/** POST /api/agent/ingest */
+export async function ingestAgentFlows(
+  flows: any[],
+  clientId = 'dashboard',
+  apiKey = process.env.NEXT_PUBLIC_AGENT_KEY ?? ''
+): Promise<Record<string, any>> {
+  return fetchApi<Record<string, any>>('/api/agent/ingest', {
+    method: 'POST',
+    body: JSON.stringify({ client_id: clientId, api_key: apiKey, flows }),
+  });
+}

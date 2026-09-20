@@ -58,7 +58,7 @@ export function Topbar() {
 
       {/* Breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', ...mono, fontSize: '0.62rem', color: '#3a4455' }}>
-        <Link href="/" style={{ color: '#3a4455', textDecoration: 'none' }}>NetSentinal</Link>
+        <Link href="/" style={{ color: '#3a4455', textDecoration: 'none', fontWeight: 600 }}>PRISM</Link>
         {crumbs.map(c => (
           <React.Fragment key={c.href}>
             <span style={{ color: '#1A2230', margin: '0 0.15rem' }}>·</span>
