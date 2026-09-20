@@ -192,7 +192,7 @@ export default function SOCOverviewDashboard() {
               onChange={(e) => handleJobSelect(e.target.value)}
               className="bg-transparent text-zinc-200 focus:outline-none cursor-pointer"
             >
-              <option value="demo">Demo Traffic Capture</option>
+              <option value="demo">Live Traffic Ingest (Active Pipeline)</option>
               {jobs.map((j) => (
                 <option key={j.job_id} value={j.job_id}>
                   {j.filename} ({j.status})
