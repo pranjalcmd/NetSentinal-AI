@@ -22,7 +22,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { HeroKaizenEarth } from '@/components/graphics/HeroKaizenEarth';
-import { getHealth } from '../lib/api';
+import { getNetworkGraph, getDashboard, getJobs } from '../lib/api';
 
 const GithubIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -31,38 +31,40 @@ const GithubIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
 );
 
 // Floating telemetry numbers on right edge (PRD Signal in the dark theme)
-const RIGHT_TELEMETRY = [
-  { val: '-16', color: 'text-red-500' },
-  { val: '-127', color: 'text-red-500' },
-  { val: '+3', color: 'text-emerald-400' },
-  { val: '-87', color: 'text-red-500' },
-  { val: '-58', color: 'text-red-500' },
-];
-
 export default function PublicHomePage() {
   const [copied, setCopied] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [githubStars] = useState(5420);
-  const [signalStats, setSignalStats] = useState({
-    nodes: 18,
-    activeEdges: 42,
-    suspiciousFlows: 3,
-    lastAnalysis: 'Live (<1s)',
-  });
+  // Nulls until the API answers. The hero states what was analysed, so a
+  // placeholder here is a claim about someone's network.
+  const [signalStats, setSignalStats] = useState<{
+    nodes: number | null;
+    activeEdges: number | null;
+    suspiciousFlows: number | null;
+    lastAnalysis: string;
+  }>({ nodes: null, activeEdges: null, suspiciousFlows: null, lastAnalysis: '—' });
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll);
 
-    getHealth()
-      .then((h) => {
-        setSignalStats((prev) => ({
-          ...prev,
-          nodes: h.flows_loaded > 0 ? Math.min(24, Math.floor(h.flows_loaded / 3)) : prev.nodes,
-          suspiciousFlows: h.alerts_loaded || prev.suspiciousFlows,
-        }));
-      })
-      .catch(() => {});
+    Promise.all([
+      getNetworkGraph().catch(() => null),
+      getDashboard().catch(() => null),
+      getJobs().catch(() => null),
+    ]).then(([graph, dashboard, jobs]) => {
+      const analysedAt = jobs?.[0]?.created_at ? new Date(jobs[0].created_at) : null;
+      const ageMs = analysedAt ? Date.now() - analysedAt.getTime() : null;
+      setSignalStats({
+        nodes: graph?.nodes?.length ?? null,
+        activeEdges: graph?.edges?.length ?? null,
+        suspiciousFlows: dashboard?.suspicious_flows ?? null,
+        lastAnalysis:
+          ageMs === null ? '—'
+            : ageMs < 60_000 ? 'Live'
+            : ageMs < 3_600_000 ? `${Math.round(ageMs / 60_000)}m ago`
+            : `${Math.round(ageMs / 3_600_000)}h ago`,
+      });
+    });
 
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
@@ -79,14 +81,6 @@ export default function PublicHomePage() {
       {/* ─── FIXED 3D EARTH SPHERE & CONCENTRIC ORBITAL RINGS BACKGROUND ─── */}
       <HeroKaizenEarth />
 
-      {/* ─── FIXED RIGHT EDGE TELEMETRY NUMBERS ────────────────────────────── */}
-      <div className="fixed right-6 top-1/2 -translate-y-1/2 hidden xl:flex flex-col gap-6 font-mono text-xs z-30 pointer-events-none drop-shadow-[0_0_10px_rgba(0,0,0,0.8)]">
-        {RIGHT_TELEMETRY.map((item, idx) => (
-          <div key={idx} className={`font-bold tracking-widest ${item.color}`}>
-            {item.val}
-          </div>
-        ))}
-      </div>
 
       {/* ─── Header / Navigation ─────────────────────────── */}
       <header
@@ -115,7 +109,7 @@ export default function PublicHomePage() {
           <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-zinc-400">
             <a href="#narrative" className="hover:text-white transition-colors">Pipeline</a>
             <a href="#trust" className="hover:text-white transition-colors">Trust Model</a>
-            <a href="https://github.com" target="_blank" rel="noreferrer" className="hover:text-white transition-colors flex items-center gap-1.5">
+            <a href="https://github.com/pranjalcmd/NetSentinal-AI" target="_blank" rel="noreferrer" className="hover:text-white transition-colors flex items-center gap-1.5">
               <span>Docs</span>
               <ExternalLink className="w-3 h-3 text-zinc-600" />
             </a>
@@ -123,7 +117,7 @@ export default function PublicHomePage() {
 
           <div className="flex items-center gap-3">
             <a
-              href="https://github.com"
+              href="https://github.com/pranjalcmd/NetSentinal-AI"
               target="_blank"
               rel="noreferrer"
               className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-xs font-medium text-zinc-300 hover:text-white transition-all"
@@ -131,7 +125,6 @@ export default function PublicHomePage() {
               <GithubIcon className="w-3.5 h-3.5 text-zinc-400" />
               <span>Star</span>
               <span className="bg-zinc-800 px-1.5 py-0.5 rounded text-[11px] font-mono text-zinc-400 border border-white/5">
-                {(githubStars / 1000).toFixed(1)}k
               </span>
             </a>
 
@@ -193,17 +186,17 @@ export default function PublicHomePage() {
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-[#3DD9C4] animate-pulse" />
               <span className="text-zinc-400">Nodes:</span>
-              <span className="text-white font-bold">{signalStats.nodes}</span>
+              <span className="text-white font-bold">{signalStats.nodes ?? '—'}</span>
             </div>
             <span className="text-zinc-700">|</span>
             <div className="flex items-center gap-2">
               <span className="text-zinc-400">Active Edges:</span>
-              <span className="text-[#3DD9C4] font-bold">{signalStats.activeEdges}</span>
+              <span className="text-[#3DD9C4] font-bold">{signalStats.activeEdges ?? '—'}</span>
             </div>
             <span className="text-zinc-700">|</span>
             <div className="flex items-center gap-2">
               <span className="text-zinc-400">Suspicious Flows:</span>
-              <span className="text-amber-400 font-bold">{signalStats.suspiciousFlows}</span>
+              <span className="text-amber-400 font-bold">{signalStats.suspiciousFlows ?? '—'}</span>
             </div>
             <span className="text-zinc-700">|</span>
             <div className="flex items-center gap-2">
@@ -228,7 +221,7 @@ export default function PublicHomePage() {
             </Link>
 
             <a
-              href="https://github.com"
+              href="https://github.com/pranjalcmd/NetSentinal-AI"
               target="_blank"
               rel="noreferrer"
               className="px-6 py-3.5 rounded-xl bg-black/60 backdrop-blur-xl hover:bg-black/80 border border-white/15 text-sm font-semibold text-zinc-300 transition-all flex items-center gap-2"
@@ -283,7 +276,7 @@ export default function PublicHomePage() {
       </section>
 
       {/* ─── GLASSMORPHISM PIPELINE CARDS: THE PRISM PIPELINE ─── */}
-      <section id="narrative" className="relative py-24 z-10">
+      <section id="narrative" className="relative py-32 z-10 bg-black">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
           <div className="text-center max-w-3xl mx-auto mb-16">
@@ -321,7 +314,7 @@ export default function PublicHomePage() {
       </section>
 
       {/* ─── GLASSMORPHISM TRUST STRIP ────────────────────── */}
-      <section id="trust" className="relative py-20 z-10">
+      <section id="trust" className="relative py-32 z-10 bg-black">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             {[
@@ -344,7 +337,7 @@ export default function PublicHomePage() {
       </section>
 
       {/* ─── GLASSMORPHISM FOOTER ────────────────────────────────────────── */}
-      <footer className="relative z-10 border-t border-white/10 py-10 bg-black/60 backdrop-blur-2xl text-xs text-zinc-500">
+      <footer className="relative z-10 border-t border-white/10 py-12 bg-black text-xs text-zinc-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-3">
             <div className="w-6 h-6 rounded bg-[#3DD9C4]/10 border border-[#3DD9C4]/30 flex items-center justify-center text-[#3DD9C4]">

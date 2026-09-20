@@ -205,7 +205,15 @@ export function HeroKaizenEarth() {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+    <div
+      className="fixed inset-0 z-0 overflow-hidden pointer-events-none"
+      style={{
+        // Anchored to the hero: without this the sphere sits behind every
+        // section for the whole scroll.
+        maskImage: 'linear-gradient(to bottom, #000 0%, #000 55%, transparent 88%)',
+        WebkitMaskImage: 'linear-gradient(to bottom, #000 0%, #000 55%, transparent 88%)',
+      }}
+    >
       <div ref={mountRef} className="w-full h-full opacity-85" />
     </div>
   );
