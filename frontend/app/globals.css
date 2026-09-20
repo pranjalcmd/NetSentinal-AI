@@ -145,6 +145,34 @@ code, pre, kbd, .font-mono {
   animation: shimmer 5s linear infinite;
 }
 
+/* ─── Glass surfaces ─────────────────────────────────────────────────────
+   One panel treatment for the whole app. Restrained on purpose: a low-alpha
+   fill over a blur reads as depth; heavier alpha just turns text grey.        */
+.glass {
+  background: rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+}
+
+.glass-hover {
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+.glass-hover:hover {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Section label: the small uppercase mono eyebrow used above every panel. */
+.eyebrow {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #52525b;
+}
+
 /* ─── Glow Cards ─────────────────────────────────────────────────────────── */
 .glow-card {
   position: relative;

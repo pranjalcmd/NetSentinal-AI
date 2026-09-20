@@ -214,7 +214,7 @@ export function HeroKaizenEarth() {
         WebkitMaskImage: 'linear-gradient(to bottom, #000 0%, #000 55%, transparent 88%)',
       }}
     >
-      <div ref={mountRef} className="w-full h-full opacity-85" />
+      <div ref={mountRef} className="w-full h-full opacity-40" />
     </div>
   );
 }

@@ -150,7 +150,7 @@ export default function PublicHomePage() {
             transition={{ duration: 0.5 }}
             className="mb-6"
           >
-            <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#3DD9C4]/10 border border-[#3DD9C4]/40 text-[#3DD9C4] text-xs font-mono font-bold tracking-widest uppercase shadow-[0_0_20px_rgba(61,217,196,0.2)]">
+            <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#3DD9C4]/10 border border-[#3DD9C4]/40 text-[#3DD9C4] text-[10px] font-mono tracking-widest uppercase">
               PRISM — EXPLAINABLE THREAT ANALYTICS &amp; SECURITY ADVISORY
             </span>
           </motion.div>
@@ -160,7 +160,7 @@ export default function PublicHomePage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
-            className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-white leading-[1.08]"
+            className="text-3xl sm:text-4xl md:text-5xl font-semibold tracking-tight text-white leading-[1.15] max-w-3xl mx-auto"
           >
             Signal in the Dark:{' '}
             <span className="text-[#3DD9C4] block sm:inline">Every Threat Refracted &amp; Explainable.</span>
@@ -171,7 +171,7 @@ export default function PublicHomePage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.25 }}
-            className="mt-6 text-base sm:text-lg text-zinc-400 max-w-2xl mx-auto font-normal leading-relaxed"
+            className="mt-6 text-sm sm:text-base text-zinc-500 max-w-xl mx-auto font-normal leading-relaxed"
           >
             PRISM refracts complex network telemetry into clear, explainable threat intelligence. PCAP captures and live telemetry enter one spectral flow engine to build a connected 3D/2D security mesh.
           </motion.p>
@@ -214,7 +214,7 @@ export default function PublicHomePage() {
           >
             <Link
               href="/overview"
-              className="px-8 py-3.5 rounded-xl bg-[#3DD9C4] text-black font-bold text-sm tracking-wide hover:bg-[#32c7b3] transition-all shadow-[0_0_30px_rgba(61,217,196,0.4)] active:scale-95 flex items-center gap-2"
+              className="px-6 py-3 rounded-full bg-[#3DD9C4] text-black font-semibold text-[13px] tracking-wide hover:bg-[#32c7b3] transition-colors active:scale-[0.98] flex items-center gap-2"
             >
               <span>Explore Dashboard</span>
               <ArrowRight className="w-4 h-4" />
@@ -284,7 +284,7 @@ export default function PublicHomePage() {
               <Layers className="w-3.5 h-3.5" />
               <span>THE PRISM PIPELINE</span>
             </div>
-            <h2 className="mt-4 text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
+            <h2 className="mt-4 text-2xl sm:text-3xl font-semibold text-white tracking-tight">
               5 Steps to Complete Telemetry Refraction
             </h2>
           </div>

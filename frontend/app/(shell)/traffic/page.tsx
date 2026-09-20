@@ -30,7 +30,7 @@ export default function TrafficExplorerPage() {
   }, [flows, minRisk, searchQuery]);
 
   return (
-    <div className="space-y-8 font-mono text-[#C1C9D6]">
+    <div className="max-w-6xl mx-auto px-6 py-10 space-y-8 font-mono text-[#C1C9D6]">
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-[#1E293B]/60 pb-4 gap-4">
         <div>

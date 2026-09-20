@@ -14,9 +14,8 @@ const NAV = [
     group: 'Monitor',
     sub: "what's being watched",
     items: [
-      { label: 'Overview',     href: '/overview' },
-      { label: 'Live Traffic', href: '/monitor' },
-      { label: 'Captures',     href: '/captures' },
+      { label: 'Overview', href: '/overview' },
+      { label: 'Captures', href: '/captures' },
     ],
   },
   {

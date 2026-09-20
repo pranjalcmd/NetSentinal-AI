@@ -1,113 +1,158 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { getCaptures } from '@/lib/mock/services';
-import type { Capture } from '@/lib/types';
-import { formatBytes, formatDuration, formatTimestamp, truncateMiddle } from '@/lib/utils';
+import React, { useEffect, useRef, useState } from 'react';
+import { UploadCloud, FileCheck2, Loader2, AlertTriangle } from 'lucide-react';
+import { getJobs, uploadPcap, loadJob, type AnalysisJob } from '@/lib/api';
+
+function when(iso?: string) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '—' : d.toLocaleString();
+}
 
 export default function CapturesPage() {
-  const [captures, setCaptures] = useState<Capture[]>([]);
+  const [jobs, setJobs] = useState<AnalysisJob[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const refresh = () => getJobs().then(setJobs).catch(() => {});
 
   useEffect(() => {
-    getCaptures().then(setCaptures);
+    let live = true;
+    getJobs().then((j) => { if (live) setJobs(j); }).catch(() => {});
+    return () => { live = false; };
   }, []);
 
-  const totalBytes = captures.reduce((acc, c) => acc + (c.sizeBytes || 0), 0);
+  const send = async (file: File) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const job = await uploadPcap(file);
+      setNote({ kind: 'ok', text: job.message || `Analysed ${file.name}` });
+      await refresh();
+    } catch (e: any) {
+      // The API explains why — file type, size, or an unreadable capture.
+      setNote({ kind: 'err', text: e?.message ?? 'Upload failed' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) void send(file);
+  };
 
   return (
-    <div className="space-y-8 font-mono text-[#C1C9D6]">
-      {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-[#1E293B]/60 pb-4 gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-[0.65rem] tracking-[0.2em] uppercase text-[#7C8798]">
-            <span>CAPTURE ARCHIVE</span>
-            <span className="text-[#3DD9C4]/40">·</span>
-            <span className="text-[#3DD9C4] lowercase font-sans">pcaps & forensic buffer storage</span>
-          </div>
-          <h1 className="text-lg tracking-widest text-[#E2E8F0] uppercase mt-1 font-semibold">
-            Evidence Captures
-          </h1>
-        </div>
+    <div className="max-w-6xl mx-auto px-6 py-10 space-y-10">
+      <header className="space-y-2">
+        <p className="eyebrow">Capture archive</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-white">Captures</h1>
+        <p className="text-sm text-zinc-500">
+          Drop a PCAP to analyse it, or reopen a capture analysed earlier.
+        </p>
+      </header>
 
-        <div className="flex items-center gap-6 text-[0.7rem] border border-[#1E293B]/80 px-4 py-2 bg-[#090d16]">
-          <div>
-            <span className="text-[#7C8798] uppercase tracking-wider block text-[0.6rem]">Total Captures</span>
-            <span className="text-[#E2E8F0] font-bold text-sm">{captures.length}</span>
-          </div>
-          <div className="h-6 w-px bg-[#1E293B]/80" />
-          <div>
-            <span className="text-[#7C8798] uppercase tracking-wider block text-[0.6rem]">Volume On Disk</span>
-            <span className="text-[#3DD9C4] font-bold text-sm">{formatBytes(totalBytes)}</span>
-          </div>
-          <div className="h-6 w-px bg-[#1E293B]/80" />
-          <div>
-            <span className="text-[#7C8798] uppercase tracking-wider block text-[0.6rem]">Auto Preserved</span>
-            <span className="text-[#3DD9C4] font-bold text-sm">
-              {captures.filter(c => c.type === 'AUTO_PRESERVED').length}
-            </span>
-          </div>
-        </div>
-      </div>
+      {/* Drop zone — native drag events, no library. */}
+      <section
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        onClick={() => inputRef.current?.click()}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click(); }}
+        className={`glass glass-hover cursor-pointer px-8 py-14 flex flex-col items-center justify-center gap-3 text-center border-dashed ${
+          dragging ? 'border-[#3DD9C4]/50 bg-[#3DD9C4]/[0.04]' : ''
+        }`}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".pcap,.pcapng"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void send(f);
+            e.target.value = '';
+          }}
+        />
+        {busy ? (
+          <Loader2 className="w-7 h-7 text-[#3DD9C4] animate-spin" />
+        ) : (
+          <UploadCloud className={`w-7 h-7 ${dragging ? 'text-[#3DD9C4]' : 'text-zinc-600'}`} />
+        )}
+        <p className="text-sm text-zinc-300">
+          {busy ? 'Analysing…' : dragging ? 'Drop to analyse' : 'Drop a .pcap or .pcapng here'}
+        </p>
+        <p className="text-xs text-zinc-600">or click to choose a file · max 100 MB</p>
+      </section>
 
-      {/* TABLE */}
-      <div className="border border-[#1E293B]/60 bg-[#060910] p-4">
-        <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-[#7C8798] border-b border-[#1E293B]/60 pb-2 mb-3">
-          <span>FORENSIC CAPTURE INDEX</span>
-          <span>SHA-256 VERIFIED RECORDINGS</span>
+      {note && (
+        <div
+          className={`glass px-5 py-4 flex items-start gap-3 text-sm ${
+            note.kind === 'ok' ? 'text-zinc-300' : 'text-amber-300'
+          }`}
+        >
+          {note.kind === 'ok'
+            ? <FileCheck2 className="w-4 h-4 text-[#3DD9C4] mt-0.5 shrink-0" />
+            : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />}
+          <span>{note.text}</span>
         </div>
+      )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-[0.72rem] border-collapse">
-            <thead>
-              <tr className="border-b border-[#1E293B]/80 text-[#7C8798] uppercase text-[0.65rem] tracking-wider bg-[#090d16]">
-                <th className="py-2.5 px-3">Status</th>
-                <th className="py-2.5 px-3">Capture ID</th>
-                <th className="py-2.5 px-3">Type</th>
-                <th className="py-2.5 px-3">Sensor</th>
-                <th className="py-2.5 px-3">Start Time</th>
-                <th className="py-2.5 px-3 text-right">Duration</th>
-                <th className="py-2.5 px-3 text-right">Size</th>
-                <th className="py-2.5 px-3">SHA-256 Hash</th>
-                <th className="py-2.5 px-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1E293B]/40">
-              {captures.map((cap) => (
-                <tr key={cap.id} className="hover:bg-[#0F172A]/40 transition-colors">
-                  <td className="py-3 px-3">
-                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[0.6rem] uppercase tracking-wider border ${
-                      cap.status === 'READY' || cap.status === 'ANALYZED' ? 'border-[#3DD9C4]/40 text-[#3DD9C4] bg-[#3DD9C4]/5' :
-                      cap.status === 'BUFFERING' || cap.status === 'RECORDING' ? 'border-[#F59E0B]/40 text-[#F59E0B] bg-[#F59E0B]/5' :
-                      'border-[#7C8798]/40 text-[#7C8798] bg-[#7C8798]/5'
-                    }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${
-                        cap.status === 'READY' || cap.status === 'ANALYZED' ? 'bg-[#3DD9C4]' : 'bg-[#F59E0B] animate-pulse'
-                      }`} />
-                      {cap.status}
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 font-semibold text-[#3DD9C4]">{cap.id}</td>
-                  <td className="py-3 px-3 text-[#E2E8F0] font-bold">{cap.type}</td>
-                  <td className="py-3 px-3 text-[#94A3B8]">{cap.sensorId || '—'}</td>
-                  <td className="py-3 px-3 text-[#94A3B8]">{cap.startTime ? formatTimestamp(cap.startTime) : '—'}</td>
-                  <td className="py-3 px-3 text-right text-[#94A3B8]">{cap.durationSec ? formatDuration(cap.durationSec) : '—'}</td>
-                  <td className="py-3 px-3 text-right font-bold text-[#E2E8F0]">{formatBytes(cap.sizeBytes || 0)}</td>
-                  <td className="py-3 px-3 text-[#7C8798] font-mono">{cap.sha256 ? truncateMiddle(cap.sha256, 16) : '—'}</td>
-                  <td className="py-3 px-3 text-right">
-                    <Link
-                      href={`/captures/${cap.id}`}
-                      className="px-2.5 py-1 text-[0.65rem] uppercase tracking-wider border border-[#3DD9C4]/40 text-[#3DD9C4] hover:bg-[#3DD9C4]/10 transition-colors"
-                    >
-                      INSPECT →
-                    </Link>
-                  </td>
+      <section className="space-y-4">
+        <p className="eyebrow">Analysed captures</p>
+
+        {jobs.length === 0 ? (
+          <div className="glass px-6 py-10 text-center text-sm text-zinc-600">
+            Nothing analysed yet. Drop a capture above to start.
+          </div>
+        ) : (
+          <div className="glass overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-wider text-zinc-600 border-b border-white/[0.07]">
+                  <th className="px-5 py-3 font-normal">Source</th>
+                  <th className="px-5 py-3 font-normal">Analysed</th>
+                  <th className="px-5 py-3 font-normal text-right">Flows</th>
+                  <th className="px-5 py-3 font-normal text-right">Suspicious</th>
+                  <th className="px-5 py-3 font-normal text-right">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+              </thead>
+              <tbody>
+                {jobs.map((j) => (
+                  <tr key={j.job_id} className="border-b border-white/[0.04] last:border-0">
+                    <td className="px-5 py-4">
+                      <div className="font-mono text-[#3DD9C4] text-[13px]">{j.filename}</div>
+                      <div className="text-xs text-zinc-600 mt-0.5 max-w-md truncate">{j.message}</div>
+                    </td>
+                    <td className="px-5 py-4 font-mono text-xs text-zinc-400">{when(j.created_at)}</td>
+                    <td className="px-5 py-4 font-mono text-right text-zinc-200">
+                      {j.summary?.total_flows ?? '—'}
+                    </td>
+                    <td className="px-5 py-4 font-mono text-right text-amber-400">
+                      {j.summary?.suspicious_flows ?? '—'}
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <button
+                        onClick={() => loadJob(j.job_id).then(refresh).catch(() => {})}
+                        className="glass glass-hover px-3 py-1.5 text-[11px] font-mono text-zinc-300"
+                      >
+                        Reopen
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

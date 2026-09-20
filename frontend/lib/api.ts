@@ -88,6 +88,15 @@ export interface CanonicalAlert {
   timestamp?: string;
   category?: string;
   evidence?: any[];
+  /** The detection record the alert summarises — all served, all renderable. */
+  confidence?: number;
+  rule_ids?: string[];
+  behavior_family?: string;
+  attribution?: string;
+  confidence_factors?: string[];
+  missing_evidence?: string[];
+  alternative_explanations?: string[];
+  recommended_next_steps?: string[];
   /** Aliases the backend projects onto every alert for table rendering. */
   entity?: string;
   type?: string;
