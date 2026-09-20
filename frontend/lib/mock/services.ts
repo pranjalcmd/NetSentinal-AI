@@ -11,6 +11,8 @@
  * In production, swap these for real fetch() calls against the backend API.
  */
 
+import { API_BASE } from '../api'
+
 import type {
   Customer,
   Engagement,
@@ -76,6 +78,37 @@ import {
  * @param min - Minimum delay in ms (default 50)
  * @param max - Maximum delay in ms (default 150)
  */
+/**
+ * One GET against the analysis backend. `null` means unreachable, refused or
+ * empty — the signal for each caller to fall back to the bundled demo set.
+ */
+async function backend<T>(path: string): Promise<T | null> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store' })
+    if (!res.ok) return null
+    const body = await res.json()
+    return Array.isArray(body) && body.length === 0 ? null : (body as T)
+  } catch {
+    return null
+  }
+}
+
+/** Detection-engine categories translated into the categories the UI renders. */
+const CATEGORY_MAP: Record<string, string> = {
+  COMMAND_AND_CONTROL: 'beaconing',
+  DNS_ANOMALY: 'dns_tunneling',
+  RECONNAISSANCE: 'port_scan',
+  LATERAL_MOVEMENT: 'lateral_movement',
+  EXFILTRATION: 'data_exfiltration',
+  DENIAL_OF_SERVICE: 'volume_anomaly',
+  TRAFFIC_ANOMALY: 'volume_anomaly',
+  UNEXPECTED_SERVICE: 'rare_port',
+}
+
+function uiCategory(raw?: string): string {
+  return CATEGORY_MAP[String(raw ?? '').toUpperCase()] ?? 'other'
+}
+
 function delay(min = 50, max = 150): Promise<void> {
   // Use deterministic mid-point for SSR compatibility
   const ms = Math.floor((min + max) / 2)
@@ -193,7 +226,7 @@ export async function getEngagement(id: string): Promise<Engagement> {
  */
 export async function getSensors(customerId?: string): Promise<Sensor[]> {
   try {
-    const health = await fetch('http://localhost:8000/api/health', { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
+    const health = await fetch(`${API_BASE}/api/health`, { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
     if (health) {
       return [
         {
@@ -253,7 +286,7 @@ export async function getSensorMetrics(id: string): Promise<SensorMetrics> {
 
 export async function getCaptures(filters?: Partial<ListFilters>): Promise<Capture[]> {
   try {
-    const rawJobs = await fetch('http://localhost:8000/api/jobs', { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
+    const rawJobs = await fetch(`${API_BASE}/api/jobs`, { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
     if (Array.isArray(rawJobs) && rawJobs.length > 0) {
       return rawJobs.map((j: any) => ({
         id: j.job_id || `CAP-${j.filename}`,
@@ -289,6 +322,9 @@ export async function getCaptures(filters?: Partial<ListFilters>): Promise<Captu
  * @throws NotFoundError if the capture does not exist.
  */
 export async function getCapture(id: string): Promise<Capture> {
+  const found = (await getCaptures()).find(c => c.id === id)
+  if (found) return found
+
   await delay(50, 100)
   const capture = MOCK_CAPTURE_MAP[id]
   if (!capture) throw new NotFoundError('Capture', id)
@@ -349,7 +385,7 @@ export async function getTrigger(id: string): Promise<Trigger> {
  */
 export async function getHosts(customerId?: string): Promise<Host[]> {
   try {
-    const rawEntities = await fetch('http://localhost:8000/api/entities', { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
+    const rawEntities = await fetch(`${API_BASE}/api/entities`, { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
     if (Array.isArray(rawEntities) && rawEntities.length > 0) {
       const internalEntities = rawEntities.filter((e: any) => e.kind === 'internal' || e.type === 'person')
       if (internalEntities.length > 0) {
@@ -390,7 +426,7 @@ export async function getHost(id: string): Promise<Host> {
 
 export async function getDestinations(customerId?: string): Promise<Destination[]> {
   try {
-    const rawEntities = await fetch('http://localhost:8000/api/entities', { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
+    const rawEntities = await fetch(`${API_BASE}/api/entities`, { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
     if (Array.isArray(rawEntities) && rawEntities.length > 0) {
       const externalEntities = rawEntities.filter((e: any) => e.kind === 'external' || e.type === 'organization')
       if (externalEntities.length > 0) {
@@ -435,8 +471,39 @@ export async function getDestination(id: string): Promise<Destination> {
  * Lists all observed network services (open ports) for a customer.
  */
 export async function getServices(customerId?: string): Promise<NetworkService[]> {
-  await delay(70, 130)
   void customerId
+  const live = await backend<any[]>('/api/flows')
+  if (live) {
+    // A service is an address *and* a port, which the entity list does not
+    // carry — so it is grouped out of the flows themselves.
+    const grouped = new Map<string, NetworkService>()
+    for (const f of live) {
+      if (!f.destination_ip || !f.destination_port) continue
+      const key = `${f.destination_ip}:${f.destination_port}`
+      const existing = grouped.get(key)
+      if (existing) {
+        existing.flows += 1
+        if (!existing.sources.includes(f.source_ip)) existing.sources.push(f.source_ip)
+        if (f.timestamp > existing.lastSeen) existing.lastSeen = f.timestamp
+        continue
+      }
+      grouped.set(key, {
+        id: key,
+        ip: f.destination_ip,
+        port: f.destination_port,
+        transport: String(f.transport ?? 'tcp').toLowerCase() as 'tcp' | 'udp',
+        application: f.application ?? 'UNKNOWN',
+        sources: [f.source_ip].filter(Boolean),
+        flows: 1,
+        firstSeen: f.timestamp ?? '',
+        lastSeen: f.timestamp ?? '',
+        riskScore: f.ml_detection?.risk_score ?? 0,
+      })
+    }
+    return [...grouped.values()].sort((a, b) => b.flows - a.flows)
+  }
+
+  await delay(70, 130)
   return MOCK_NETWORK_SERVICES.map(s => ({ ...s }))
 }
 
@@ -455,24 +522,24 @@ export async function getFlows(filters?: Partial<ListFilters & {
   protocol?: string
 }>): Promise<Flow[]> {
   try {
-    const rawBackendFlows = await fetch('http://localhost:8000/api/flows', { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
+    const rawBackendFlows = await fetch(`${API_BASE}/api/flows`, { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
     if (Array.isArray(rawBackendFlows) && rawBackendFlows.length > 0) {
       let mapped: Flow[] = rawBackendFlows.map((f: any) => ({
-        id: f.flow_id || f.id || `F-${Math.random().toString(36).substr(2, 6)}`,
-        timestamp: f.timestamp || new Date().toISOString(),
-        srcIp: f.source_ip || f.srcIp || '192.168.1.1',
-        srcPort: f.source_port || f.srcPort || 80,
-        dstIp: f.destination_ip || f.dstIp || '10.0.0.1',
-        dstPort: f.destination_port || f.dstPort || 443,
-        protocol: f.transport || f.protocol || 'TCP',
-        application: f.application || f.protocol || 'HTTP',
-        packets: f.packets || 1,
-        bytes: f.bytes || 64,
-        duration: f.duration_seconds || 1,
-        riskScore: f.risk_score ?? (f.label === 'malicious' ? 85 : 15),
-        risk: f.label === 'malicious' ? 'high' : 'low',
-        captureId: 'CAP-1050',
-        sensorId: 'SNS-042',
+        id: f.flow_id ?? f.id,
+        timestamp: f.timestamp ?? '',
+        srcIp: f.source_ip ?? '',
+        srcPort: f.source_port ?? 0,
+        dstIp: f.destination_ip ?? '',
+        dstPort: f.destination_port ?? 0,
+        protocol: f.transport ?? '',
+        application: f.application ?? 'UNKNOWN',
+        packets: f.packets ?? 0,
+        bytes: f.bytes ?? 0,
+        duration: f.duration_seconds ?? 0,
+        riskScore: f.ml_detection?.risk_score ?? 0,
+        risk: (f.ndpi_risks?.length ? 'medium' : 'none') as any,
+        captureId: '',
+        sensorId: '',
         relatedFindings: []
       }))
 
@@ -527,26 +594,27 @@ export async function getFlow(id: string): Promise<Flow> {
  */
 export async function getFindings(filters?: Partial<ListFilters>): Promise<Finding[]> {
   try {
-    const rawBackendAlerts = await fetch('http://localhost:8000/api/alerts', { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
+    const rawBackendAlerts = await fetch(`${API_BASE}/api/alerts`, { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
     if (Array.isArray(rawBackendAlerts) && rawBackendAlerts.length > 0) {
       const mapped: Finding[] = rawBackendAlerts.map((a: any, idx: number) => ({
         id: a.id || `FND-${100 + idx}`,
         title: a.title || a.rule_name || 'Correlated Network Anomaly',
         description: Array.isArray(a.evidence) ? a.evidence.join(' ') : (a.description || 'Observed anomalous traffic pattern'),
-        severity: (a.severity || 'high').toLowerCase() as any,
+        severity: String(a.severity ?? 'info').toLowerCase() as any,
         status: 'open',
-        category: a.category || 'beaconing',
-        riskScore: a.risk_score || 75,
-        confidence: 85,
-        hostIds: [a.src_ip || '192.168.1.49'],
-        destinationIds: [a.dst_ip || '198.51.100.127'],
-        captureId: 'CAP-1050',
-        sensorId: 'SNS-042',
+        category: uiCategory(a.category) as any,
+        riskScore: a.risk_score ?? 0,
+        confidence: a.confidence ?? 0,
+        // `entity` is the alert's source address. The destination lives on the
+        // flow, not the alert, so it stays empty rather than being invented.
+        hostIds: [a.entity].filter(Boolean),
+        destinationIds: [],
         triggerIds: [],
         flowIds: a.flow_id ? [a.flow_id] : [],
         evidenceIds: [],
-        firstSeen: a.timestamp || new Date().toISOString(),
-        lastSeen: a.timestamp || new Date().toISOString(),
+        firstSeen: a.created_at ?? a.timestamp ?? '',
+        lastSeen: a.created_at ?? a.timestamp ?? '',
+        incidentId: a.incident_id ?? undefined,
       }))
       return mapped
     }
@@ -569,6 +637,9 @@ export async function getFindings(filters?: Partial<ListFilters>): Promise<Findi
  * @throws NotFoundError if the finding does not exist.
  */
 export async function getFinding(id: string): Promise<Finding> {
+  const found = (await getFindings()).find(f => f.id === id)
+  if (found) return found
+
   await delay(60, 120)
   const finding = MOCK_FINDING_MAP[id]
   if (!finding) throw new NotFoundError('Finding', id)
@@ -584,6 +655,25 @@ export async function getFinding(id: string): Promise<Finding> {
  * Returns incidents sorted by risk score descending.
  */
 export async function getIncidents(filters?: Partial<ListFilters>): Promise<Incident[]> {
+  const live = await backend<any[]>('/api/incidents')
+  if (live) {
+    return live.map((i: any): Incident => ({
+      id: i.incident_id,
+      title: i.title,
+      description: i.root_hypothesis || i.narrative?.[0] || '',
+      status: (String(i.status ?? '').toUpperCase() === 'NEW' ? 'open' : 'investigating') as any,
+      riskScore: i.risk ?? 0,
+      confidence: i.confidence ?? 0,
+      hostIds: [i.primary_host].filter(Boolean),
+      findingIds: i.finding_ids ?? [],
+      captureIds: i.capture_ids ?? [],
+      sensorIds: i.sensor_ids ?? [],
+      firstSeen: i.started_at ?? i.created_at ?? '',
+      lastSeen: i.last_activity_at ?? i.created_at ?? '',
+      aiSummary: i.impact_assessment || undefined,
+    }))
+  }
+
   await delay(80, 150)
   let results = [...MOCK_INCIDENTS]
 
@@ -627,6 +717,9 @@ export async function getIncidents(filters?: Partial<ListFilters>): Promise<Inci
  * @throws NotFoundError if the incident does not exist.
  */
 export async function getIncident(id: string): Promise<Incident> {
+  const found = (await getIncidents()).find(i => i.id === id)
+  if (found) return found
+
   await delay(60, 120)
   const incident = MOCK_INCIDENT_MAP[id]
   if (!incident) throw new NotFoundError('Incident', id)
@@ -646,6 +739,25 @@ export async function getTimeline(filters?: Partial<ListFilters & {
   incidentId?: string
   captureId?: string
 }>): Promise<TimelineEvent[]> {
+  const live = await backend<any[]>('/api/alerts')
+  if (live) {
+    return live
+      .map((a: any): TimelineEvent => ({
+        id: a.alert_id ?? a.id,
+        timestamp: a.created_at ?? '',
+        type: 'finding',
+        title: a.title ?? 'Detection',
+        description: Array.isArray(a.evidence) ? a.evidence.join(' ') : '',
+        severity: String(a.severity ?? 'info').toLowerCase() as any,
+        entityId: a.entity,
+        entityType: 'host',
+        findingId: a.alert_id ?? a.id,
+        incidentId: a.incident_id ?? undefined,
+        flowId: a.flow_id,
+      }))
+      .sort((x, y) => (x.timestamp < y.timestamp ? 1 : -1))
+  }
+
   await delay(70, 130)
   let results = [...MOCK_TIMELINE_EVENTS]
 
@@ -775,7 +887,7 @@ export async function getReport(id: string): Promise<Report> {
  */
 export async function getSystemHealth(): Promise<SystemHealth> {
   try {
-    const backendHealth = await fetch('http://localhost:8000/api/health', { cache: 'no-store' }).then(res => res.ok ? res.json() : null);
+    const backendHealth = await fetch(`${API_BASE}/api/health`, { cache: 'no-store' }).then(res => res.ok ? res.json() : null);
     if (backendHealth) {
       return {
         overall: backendHealth.status === 'ok' ? 'healthy' : 'degraded',

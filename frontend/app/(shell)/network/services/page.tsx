@@ -57,6 +57,28 @@ export default function NetworkServicesPage() {
   const totalServices = services.length;
   const totalFlows = services.reduce((sum, s) => sum + s.flows, 0);
 
+  // Both of these used to be fixed strings, which read as measurements.
+  const transportMix = useMemo(() => {
+    const counts = services.reduce<Record<string, number>>((acc, s) => {
+      acc[s.transport] = (acc[s.transport] ?? 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([t, n]) => `${t.toUpperCase()} ${n}`)
+      .join(' · ');
+  }, [services]);
+
+  const busiestPorts = useMemo(() => {
+    const byPort = new Map<number, { port: number; app: string; flows: number }>();
+    for (const s of services) {
+      const seen = byPort.get(s.port);
+      if (seen) seen.flows += s.flows;
+      else byPort.set(s.port, { port: s.port, app: s.application ?? '', flows: s.flows });
+    }
+    return [...byPort.values()].sort((a, b) => b.flows - a.flows).slice(0, 3);
+  }, [services]);
+
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto min-h-screen text-slate-100">
       {/* Header */}
@@ -106,17 +128,19 @@ export default function NetworkServicesPage() {
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm">
-          <span className="text-xs font-medium text-slate-400 block mb-1">Primary Transport</span>
-          <div className="text-sm font-bold text-slate-200 mt-2 font-mono">TCP / UDP (DPI Enriched)</div>
-          <div className="text-[11px] text-slate-500 mt-1">DPI Engine v2.8</div>
+          <span className="text-xs font-medium text-slate-400 block mb-1">Transport Mix</span>
+          <div className="text-sm font-bold text-slate-200 mt-2 font-mono">{transportMix || '—'}</div>
+          <div className="text-[11px] text-slate-500 mt-1">observed across services</div>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm">
-          <span className="text-xs font-medium text-slate-400 block mb-1">Key Ports</span>
+          <span className="text-xs font-medium text-slate-400 block mb-1">Busiest Ports</span>
           <div className="text-xs font-mono font-bold text-emerald-400 mt-2">
-            Port 443 TLS · Port 53 DNS · Port 8443
+            {busiestPorts.length
+              ? busiestPorts.map((p) => `${p.port} ${p.app}`).join(' · ')
+              : '—'}
           </div>
-          <div className="text-[11px] text-slate-500 mt-1">Encrypted perimeter traffic</div>
+          <div className="text-[11px] text-slate-500 mt-1">by connection count</div>
         </div>
       </div>
 

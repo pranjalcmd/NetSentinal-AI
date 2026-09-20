@@ -76,3 +76,40 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[] = []): Asyn
 
   return { ...state, reload }
 }
+
+
+/**
+ * Live backend status for the shell chrome.
+ *
+ * The sidebar and topbar used to print a fixed sensor id, which read as a real
+ * connected sensor on every page of the app. This reports what the API
+ * actually says, and says nothing when it cannot be reached.
+ */
+export function useBackendStatus(): {
+  online: boolean | null
+  dpiMode: string | null
+  flows: number | null
+} {
+  const [state, setState] = useState<{
+    online: boolean | null
+    dpiMode: string | null
+    flows: number | null
+  }>({ online: null, dpiMode: null, flows: null })
+
+  useEffect(() => {
+    let live = true
+    import('./api')
+      .then((m) => m.getHealth())
+      .then((h) => {
+        if (live) setState({ online: true, dpiMode: h.dpi_mode, flows: h.flows_loaded })
+      })
+      .catch(() => {
+        if (live) setState({ online: false, dpiMode: null, flows: null })
+      })
+    return () => {
+      live = false
+    }
+  }, [])
+
+  return state
+}

@@ -1,5 +1,7 @@
 'use client';
 
+import { useBackendStatus } from '@/lib/useApi';
+
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -44,6 +46,7 @@ const NAV = [
 ];
 
 export function Sidebar() {
+  const backend = useBackendStatus();
   const pathname = usePathname();
 
   const isActive = (href: string) =>
@@ -154,9 +157,11 @@ export function Sidebar() {
             width: 5, height: 5, borderRadius: '50%',
             background: '#3DD9C4', boxShadow: '0 0 6px #3DD9C4',
           }} />
-          <span style={{ color: '#3DD9C4', letterSpacing: '0.06em' }}>SNS-042</span>
+          <span style={{ color: '#3DD9C4', letterSpacing: '0.06em' }}>
+            {backend.online === false ? 'API OFFLINE' : backend.dpiMode ?? 'CONNECTING'}
+          </span>
         </div>
-        <div>842 Mbps · CONNECTED</div>
+        <div>{backend.flows !== null ? `${backend.flows} flows in store` : 'awaiting analysis'}</div>
       </div>
     </aside>
   );

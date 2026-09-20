@@ -21,6 +21,7 @@ import { ToastContainer } from './ToastContainer';
 import { CommandPalette } from './CommandPalette';
 import { OpeningSplash } from '../ui/OpeningSplash';
 import { AICopilotWidget } from '../ai/AICopilotWidget';
+import { useBackendStatus } from '@/lib/useApi';
 
 export type ToastVariant = 'info' | 'success' | 'warning' | 'error';
 
@@ -120,6 +121,8 @@ export function AppShell({ children }: AppShellProps) {
     };
   }, []);
 
+  const backend = useBackendStatus();
+
   const contextValue: AppContextValue = {
     customer: MOCK_CUSTOMER,
     engagement: MOCK_ENGAGEMENT,
@@ -144,6 +147,18 @@ export function AppShell({ children }: AppShellProps) {
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Top Bar with Breadcrumbs & Live Connection Status */}
           <Topbar />
+
+          {/* With the API down each page falls back to the bundled sample
+              capture. Saying so is the difference between a demo and a lie. */}
+          {backend.online === false && (
+            <div
+              role="status"
+              className="px-4 py-2 text-[11px] font-mono text-amber-300 bg-amber-500/10 border-b border-amber-500/30 flex items-center gap-2"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+              Backend unreachable — every figure below is bundled sample data, not this environment.
+            </div>
+          )}
 
           {/* Core Content Area */}
           <main className="flex-1 overflow-y-auto bg-[#0A0E14]">

@@ -1,5 +1,7 @@
 'use client';
 
+import { useBackendStatus } from '@/lib/useApi';
+
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -16,6 +18,7 @@ const CRUMB: Record<string, string> = {
 };
 
 export function Topbar() {
+  const backend = useBackendStatus();
   const pathname = usePathname();
   const { customer, engagement, setCommandPaletteOpen } = useAppContext();
   const [scrolled, setScrolled] = useState(false);
@@ -99,11 +102,17 @@ export function Topbar() {
           }}
         >CMD K</button>
 
-        {/* Live badge */}
+        {/* Backend state — reported, never assumed */}
         <div style={{ ...mono, fontSize: '0.58rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#3DD9C4', boxShadow: '0 0 7px #3DD9C4', flexShrink: 0 }} />
-          <span style={{ color: '#3DD9C4' }}>LIVE</span>
-          <span style={{ color: '#3a4455' }}>SNS-042</span>
+          <span style={{
+            width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
+            background: backend.online === false ? '#E8483A' : backend.online ? '#3DD9C4' : '#3a4455',
+            boxShadow: backend.online ? '0 0 7px #3DD9C4' : 'none',
+          }} />
+          <span style={{ color: backend.online === false ? '#E8483A' : backend.online ? '#3DD9C4' : '#3a4455' }}>
+            {backend.online === null ? '—' : backend.online ? 'LIVE' : 'OFFLINE'}
+          </span>
+          {backend.flows !== null && <span style={{ color: '#3a4455' }}>{backend.flows} flows</span>}
         </div>
       </div>
     </header>
