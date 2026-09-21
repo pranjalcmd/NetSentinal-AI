@@ -170,7 +170,7 @@ export default function SOCOverviewDashboard() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-white tracking-tight">Production Corporate Core</h1>
+              <h1 className="text-lg font-bold text-white tracking-tight">Good morning, analyst.</h1>
               <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold uppercase ${
                 isStale ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
               }`}>
@@ -178,7 +178,7 @@ export default function SOCOverviewDashboard() {
               </span>
             </div>
             <p className="text-xs text-zinc-400 font-mono">
-              Refreshed: {lastRefreshed} • {kpis.totalFlows} normalized flows in active store
+              Here's what's happening across your network • Refreshed: {lastRefreshed} ({kpis.totalFlows} active flows)
             </p>
           </div>
         </div>

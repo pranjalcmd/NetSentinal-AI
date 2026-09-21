@@ -30,7 +30,6 @@ const GithubIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
   </svg>
 );
 
-// Floating telemetry numbers on right edge (PRD Signal in the dark theme)
 const RIGHT_TELEMETRY = [
   { val: '-16', color: 'text-red-500' },
   { val: '-127', color: 'text-red-500' },
@@ -107,7 +106,7 @@ export default function PublicHomePage() {
                 PRISM
               </span>
               <span className="text-[9px] text-[#3DD9C4] font-mono tracking-widest uppercase font-semibold">
-                Threat Analytics & Consultancy
+                Network Intelligence
               </span>
             </div>
           </Link>
@@ -139,135 +138,95 @@ export default function PublicHomePage() {
               href="/overview"
               className="relative group inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#3DD9C4] text-black font-semibold text-xs tracking-wide hover:bg-[#34c4b0] transition-all duration-200 shadow-[0_0_20px_rgba(61,217,196,0.35)] active:scale-95"
             >
-              <span>Explore Dashboard</span>
+              <span>Explore your network</span>
               <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
             </Link>
           </div>
         </div>
       </header>
 
-      {/* ─── Hero Section: PRISM — Signal in the Dark ──────────────── */}
+      {/* ─── Hero Section: Lumina Minimal & Calm Copy ──────────────── */}
       <section className="relative min-h-[88vh] flex flex-col justify-center pt-32 pb-20 z-10">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           
-          {/* Official Tagline Badge */}
+          {/* Tagline Badge */}
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
             className="mb-6"
           >
-            <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#3DD9C4]/10 border border-[#3DD9C4]/40 text-[#3DD9C4] text-xs font-mono font-bold tracking-widest uppercase shadow-[0_0_20px_rgba(61,217,196,0.2)]">
-              PRISM — EXPLAINABLE THREAT ANALYTICS &amp; SECURITY ADVISORY
+            <span className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-mono font-bold tracking-widest uppercase">
+              NETWORK INTELLIGENCE, CLARIFIED
             </span>
           </motion.div>
 
-          {/* PRISM Main Headline */}
+          {/* Clean Main Headline */}
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-white leading-[1.08]"
+            transition={{ duration: 0.6, delay: 0.15 }}
+            className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-white leading-[1.06]"
           >
-            Signal in the Dark:{' '}
-            <span className="text-[#3DD9C4] block sm:inline">Every Threat Refracted &amp; Explainable.</span>
+            See what's{' '}
+            <span className="text-[#3DD9C4] block sm:inline">actually happening.</span>
           </motion.h1>
 
-          {/* Subtitle */}
+          {/* Minimal Subtitle */}
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.25 }}
-            className="mt-6 text-base sm:text-lg text-zinc-400 max-w-2xl mx-auto font-normal leading-relaxed"
+            className="mt-6 text-base sm:text-lg text-zinc-400 max-w-xl mx-auto font-normal leading-relaxed"
           >
-            PRISM refracts complex network telemetry into clear, explainable threat intelligence. PCAP captures and live telemetry enter one spectral flow engine to build a connected 3D/2D security mesh.
+            PRISM gives security and platform teams a calm, legible view of every connection, anomaly, and emerging risk. See the signal before it becomes noise.
           </motion.p>
 
-          {/* Live Signal Readout Strip */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
-            className="mt-8 inline-flex flex-wrap items-center justify-center gap-6 p-3.5 rounded-2xl bg-black/60 border border-white/10 backdrop-blur-2xl text-xs font-mono shadow-2xl"
-          >
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#3DD9C4] animate-pulse" />
-              <span className="text-zinc-400">Nodes:</span>
-              <span className="text-white font-bold">{signalStats.nodes}</span>
-            </div>
-            <span className="text-zinc-700">|</span>
-            <div className="flex items-center gap-2">
-              <span className="text-zinc-400">Active Edges:</span>
-              <span className="text-[#3DD9C4] font-bold">{signalStats.activeEdges}</span>
-            </div>
-            <span className="text-zinc-700">|</span>
-            <div className="flex items-center gap-2">
-              <span className="text-zinc-400">Suspicious Flows:</span>
-              <span className="text-amber-400 font-bold">{signalStats.suspiciousFlows}</span>
-            </div>
-            <span className="text-zinc-700">|</span>
-            <div className="flex items-center gap-2">
-              <span className="text-zinc-400">Freshness:</span>
-              <span className="text-emerald-400 font-bold">{signalStats.lastAnalysis}</span>
-            </div>
-          </motion.div>
-
-          {/* Primary Action Buttons */}
+          {/* Action Toolbar */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.35 }}
-            className="mt-8 flex flex-wrap items-center justify-center gap-4"
+            className="mt-9 flex flex-wrap items-center justify-center gap-4"
           >
             <Link
               href="/overview"
-              className="px-8 py-3.5 rounded-xl bg-[#3DD9C4] text-black font-bold text-sm tracking-wide hover:bg-[#32c7b3] transition-all shadow-[0_0_30px_rgba(61,217,196,0.4)] active:scale-95 flex items-center gap-2"
+              className="px-7 py-3 rounded-full bg-white text-black font-semibold text-xs tracking-wide hover:bg-zinc-200 transition-all shadow-[0_0_25px_rgba(255,255,255,0.2)] active:scale-95 flex items-center gap-2"
             >
-              <span>Explore Dashboard</span>
-              <ArrowRight className="w-4 h-4" />
+              <span>Explore your network</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </Link>
 
             <a
-              href="https://github.com"
-              target="_blank"
-              rel="noreferrer"
-              className="px-6 py-3.5 rounded-xl bg-black/60 backdrop-blur-xl hover:bg-black/80 border border-white/15 text-sm font-semibold text-zinc-300 transition-all flex items-center gap-2"
+              href="#narrative"
+              className="px-6 py-3 rounded-full bg-black/60 backdrop-blur-xl hover:bg-black/80 border border-white/15 text-xs font-medium text-zinc-300 transition-all"
             >
-              <GithubIcon className="w-4 h-4 text-zinc-400" />
-              <span>Star on GitHub</span>
+              How it works ∨
             </a>
           </motion.div>
 
-          {/* Trust Badges */}
+          {/* Minimal Trust Indicator Strip */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.4 }}
-            className="mt-8 flex flex-wrap items-center justify-center gap-6 text-xs text-zinc-400 font-mono"
+            className="mt-12 inline-flex items-center gap-3 text-xs font-mono text-zinc-500"
           >
-            <div className="flex items-center gap-1.5">
-              <span className="text-emerald-400">✓</span>
-              <span>Metadata-first privacy</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-emerald-400">✓</span>
-              <span>PCAP + live agent normalization</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-emerald-400">✓</span>
-              <span>Rules + ML explainable findings</span>
-            </div>
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span>Live by design</span>
+            <span className="text-zinc-700">/</span>
+            <span>Built for signal, not spectacle</span>
           </motion.div>
 
-          {/* Command Install Box */}
+          {/* Install Command */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.45 }}
-            className="mt-8 inline-flex items-center"
+            className="mt-8 flex justify-center"
           >
-            <div className="flex items-center gap-3 px-5 py-2.5 rounded-full bg-black/70 backdrop-blur-xl border border-white/15 font-mono text-xs text-zinc-300 shadow-2xl hover:border-white/30 transition-all">
-              <span className="text-zinc-500 select-none">&gt;_</span>
+            <div className="inline-flex items-center gap-3 px-5 py-2 rounded-full bg-black/70 backdrop-blur-xl border border-white/10 font-mono text-xs text-zinc-400 hover:border-white/25 transition-all">
+              <span className="text-zinc-600 select-none">&gt;_</span>
               <span>pip install prism-sec</span>
               <button
                 onClick={copyInstallCommand}
@@ -282,8 +241,8 @@ export default function PublicHomePage() {
         </div>
       </section>
 
-      {/* ─── GLASSMORPHISM PIPELINE CARDS: THE PRISM PIPELINE ─── */}
-      <section id="narrative" className="relative py-24 z-10">
+      {/* ─── GLASSMORPHISM PIPELINE CARDS ─────────────────────────────────── */}
+      <section id="narrative" className="relative py-24 z-10 border-t border-white/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
           <div className="text-center max-w-3xl mx-auto mb-16">
@@ -291,8 +250,8 @@ export default function PublicHomePage() {
               <Layers className="w-3.5 h-3.5" />
               <span>THE PRISM PIPELINE</span>
             </div>
-            <h2 className="mt-4 text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
-              5 Steps to Complete Telemetry Refraction
+            <h2 className="mt-4 text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+              A Calmer Way to Telemetry Truth
             </h2>
           </div>
 
@@ -343,7 +302,7 @@ export default function PublicHomePage() {
         </div>
       </section>
 
-      {/* ─── GLASSMORPHISM FOOTER ────────────────────────────────────────── */}
+      {/* ─── FOOTER ────────────────────────────────────────── */}
       <footer className="relative z-10 border-t border-white/10 py-10 bg-black/60 backdrop-blur-2xl text-xs text-zinc-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-3">
@@ -352,7 +311,7 @@ export default function PublicHomePage() {
             </div>
             <span className="font-bold text-white tracking-wide">PRISM</span>
             <span>—</span>
-            <span>Threat Analysis &amp; Consultancy System</span>
+            <span>Network Intelligence</span>
           </div>
 
           <div className="flex items-center gap-6">
@@ -362,7 +321,7 @@ export default function PublicHomePage() {
           </div>
 
           <div>
-            © {new Date().getFullYear()} PRISM Security Advisory. Apache 2.0.
+            © {new Date().getFullYear()} PRISM. Built for signal, not spectacle.
           </div>
         </div>
       </footer>
