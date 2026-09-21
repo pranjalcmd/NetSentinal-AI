@@ -1,15 +1,41 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { getTimeline } from '@/lib/mock/services';
+import { getTimeline as getApiTimeline } from '@/lib/api';
+import { getTimeline as getMockTimeline } from '@/lib/mock/services';
 import type { TimelineEvent } from '@/lib/types';
 import { formatTimestamp } from '@/lib/utils';
 
 export default function TimelinePage() {
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [events, setEvents] = useState<Array<any>>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getTimeline().then(setEvents);
+    let mounted = true;
+    async function loadData() {
+      try {
+        const apiData = await getApiTimeline();
+        if (mounted) {
+          setEvents((apiData || []).map(e => ({
+            id: e.id,
+            timestamp: e.timestamp,
+            title: e.title,
+            description: e.description,
+            severity: e.severity,
+            type: e.type,
+          })));
+          setLoading(false);
+        }
+      } catch (e) {
+        console.warn('Backend API failed loading timeline', e);
+        if (mounted) {
+          setEvents([]);
+          setLoading(false);
+        }
+      }
+    }
+    loadData();
+    return () => { mounted = false; };
   }, []);
 
   return (
@@ -41,7 +67,15 @@ export default function TimelinePage() {
         </div>
 
         <div className="space-y-4 relative pl-6 border-l border-[#1E293B]/80">
-          {events.map((e) => {
+          {loading ? (
+            <div className="py-8 text-center text-[#7C8798] uppercase text-[0.65rem]">
+              Loading Event Telemetry Stream...
+            </div>
+          ) : events.length === 0 ? (
+            <div className="py-8 text-center text-[#7C8798] uppercase text-[0.65rem]">
+              No timeline events recorded. Ingest traffic to populate event stream.
+            </div>
+          ) : events.map((e) => {
             const isCritical = e.severity === 'critical';
             return (
               <div key={e.id} className="relative group">
@@ -59,14 +93,14 @@ export default function TimelinePage() {
                         e.severity === 'high' ? 'border-[#F59E0B]/40 text-[#F59E0B]' :
                         'border-[#3DD9C4]/40 text-[#3DD9C4]'
                       }`}>
-                        {e.type}
+                        {e.type || 'EVENT'}
                       </span>
                       <span className="font-bold text-[#E2E8F0]">{e.title}</span>
                     </div>
-                    <span className="text-[#7C8798] text-[0.65rem]">{e.timestamp ? formatTimestamp(e.timestamp) : '—'}</span>
+                    <span className="text-[0.65rem] text-[#7C8798]">{formatTimestamp(e.timestamp)}</span>
                   </div>
 
-                  <p className="text-xs text-[#94A3B8] font-sans leading-relaxed">{e.description}</p>
+                  <p className="text-[0.7rem] text-[#94A3B8] font-sans leading-relaxed">{e.description}</p>
                 </div>
               </div>
             );

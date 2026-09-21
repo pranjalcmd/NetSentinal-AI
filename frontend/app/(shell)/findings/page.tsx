@@ -2,14 +2,41 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getFindings } from '@/lib/mock/services';
+import { getFindings as getApiFindings, BackendFinding } from '@/lib/api';
+import { getFindings as getMockFindings } from '@/lib/mock/services';
 import type { Finding } from '@/lib/types';
 
 export default function FindingsPage() {
-  const [findings, setFindings] = useState<Finding[]>([]);
+  const [findings, setFindings] = useState<Array<any>>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getFindings().then(setFindings);
+    let mounted = true;
+    async function loadData() {
+      try {
+        const apiData = await getApiFindings();
+        if (mounted) {
+          setFindings((apiData || []).map(f => ({
+            id: f.id,
+            title: f.title,
+            category: f.category || 'network_anomaly',
+            riskScore: f.risk_score,
+            confidence: f.confidence || 80,
+            status: f.status || 'open',
+            severity: f.severity,
+          })));
+          setLoading(false);
+        }
+      } catch (e) {
+        console.warn('Backend API failed loading findings', e);
+        if (mounted) {
+          setFindings([]);
+          setLoading(false);
+        }
+      }
+    }
+    loadData();
+    return () => { mounted = false; };
   }, []);
 
   const criticalCount = findings.filter(f => f.severity === 'critical' || f.riskScore >= 80).length;
@@ -70,7 +97,19 @@ export default function FindingsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1E293B]/40">
-              {findings.map((finding) => {
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-[#7C8798] uppercase text-[0.65rem]">
+                    Loading Threat Findings...
+                  </td>
+                </tr>
+              ) : findings.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-[#7C8798] uppercase text-[0.65rem]">
+                    No threat findings detected. Ingest network flows or upload PCAPs to perform analysis.
+                  </td>
+                </tr>
+              ) : findings.map((finding) => {
                 const isHigh = finding.riskScore >= 75;
                 return (
                   <tr key={finding.id} className="hover:bg-[#0F172A]/40 transition-colors">
@@ -110,3 +149,4 @@ export default function FindingsPage() {
     </div>
   );
 }
+

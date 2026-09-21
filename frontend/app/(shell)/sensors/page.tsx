@@ -2,15 +2,46 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getSensors } from '@/lib/mock/services';
+import { getSensors as getApiSensors } from '@/lib/api';
+import { getSensors as getMockSensors } from '@/lib/mock/services';
 import type { Sensor } from '@/lib/types';
 import { formatBytes } from '@/lib/utils';
 
 export default function SensorsPage() {
-  const [sensors, setSensors] = useState<Sensor[]>([]);
+  const [sensors, setSensors] = useState<Array<any>>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getSensors().then(setSensors);
+    let mounted = true;
+    async function loadData() {
+      try {
+        const apiData = await getApiSensors();
+        if (mounted) {
+          setSensors((apiData || []).map(s => ({
+            id: s.id,
+            name: s.name,
+            interface: s.interface || 'eth0',
+            os: s.os || 'Linux',
+            version: s.version || 'v2.8.4',
+            status: s.status || 'online',
+            metrics: {
+              mbps: s.metrics?.mbps ?? 0,
+              pps: s.metrics?.pps ?? 0,
+              bufferPercent: s.metrics?.buffer_percent ?? 0,
+            },
+          })));
+          setLoading(false);
+        }
+      } catch (e) {
+        console.warn('Backend API failed loading sensors', e);
+        if (mounted) {
+          setSensors([]);
+          setLoading(false);
+        }
+      }
+    }
+    loadData();
+    return () => { mounted = false; };
   }, []);
 
   const totalMbps = sensors.reduce((acc, s) => acc + (s.metrics?.mbps || 0), 0);
@@ -54,7 +85,7 @@ export default function SensorsPage() {
         <div className="border border-[#1E293B]/60 bg-[#060910] p-4">
           <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-widest text-[#7C8798] border-b border-[#1E293B]/60 pb-2 mb-3">
             <span>SENSOR FLEET REGISTRY</span>
-            <span>3 HARDWARE PROBES LISTED</span>
+            <span>{sensors.length} HARDWARE PROBES LISTED</span>
           </div>
 
           <div className="overflow-x-auto">
@@ -73,7 +104,19 @@ export default function SensorsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1E293B]/40">
-                {sensors.map((sensor) => {
+                {loading ? (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-[#7C8798] uppercase text-[0.65rem]">
+                      Loading Sensor Fleet...
+                    </td>
+                  </tr>
+                ) : sensors.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-[#7C8798] uppercase text-[0.65rem]">
+                      No active sensor hardware probes connected. Ingestion engine ready.
+                    </td>
+                  </tr>
+                ) : sensors.map((sensor) => {
                   const isOnline = sensor.status === 'online';
                   const isDegraded = sensor.status === 'degraded';
                   return (
@@ -93,12 +136,12 @@ export default function SensorsPage() {
                       <td className="py-3 px-3 font-semibold text-[#3DD9C4]">{sensor.id}</td>
                       <td className="py-3 px-3 text-[#E2E8F0] font-bold">{sensor.name}</td>
                       <td className="py-3 px-3 text-[#94A3B8]">{sensor.interface}</td>
-                      <td className="py-3 px-3 text-[#94A3B8]">{sensor.os} (v{sensor.version})</td>
+                      <td className="py-3 px-3 text-[#94A3B8]">{sensor.os} ({sensor.version})</td>
                       <td className="py-3 px-3 text-right font-bold text-[#E2E8F0]">{sensor.metrics?.mbps ?? 0} Mbps</td>
                       <td className="py-3 px-3 text-right text-[#94A3B8]">{(sensor.metrics?.pps ?? 0).toLocaleString()} pps</td>
                       <td className="py-3 px-3 text-right">
                         <span className={(sensor.metrics?.bufferPercent ?? 0) > 75 ? 'text-[#F59E0B]' : 'text-[#3DD9C4]'}>
-                          {sensor.metrics?.bufferPercent ?? 0}% ({formatBytes(sensor.metrics?.bufferSize ?? 0)})
+                          {sensor.metrics?.bufferPercent ?? 0}%
                         </span>
                       </td>
                       <td className="py-3 px-3 text-right">

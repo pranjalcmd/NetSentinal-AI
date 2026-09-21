@@ -235,3 +235,198 @@ export async function ingestAgentFlows(flows: any[]): Promise<Record<string, any
     body: JSON.stringify({ flows }),
   });
 }
+
+/** POST /api/demo/load */
+export async function loadDemo(): Promise<Record<string, any>> {
+  return fetchApi<Record<string, any>>('/api/demo/load', { method: 'POST' });
+}
+
+/** POST /api/store/clear */
+export async function clearStore(): Promise<Record<string, any>> {
+  return fetchApi<Record<string, any>>('/api/store/clear', { method: 'POST' });
+}
+
+// ─── Captures ─────────────────────────────────────────────────────────────
+
+export interface BackendCapture {
+  id: string;
+  type: string;
+  status: string;
+  sensor_id: string;
+  sensor_name: string;
+  filename: string;
+  start_time: string;
+  size_bytes: number;
+  sha256: string;
+  flows: number;
+  alerts: number;
+  created_at: string;
+  summary: Record<string, any>;
+  flow_list?: any[];
+  alert_list?: any[];
+}
+
+/** GET /api/captures */
+export async function getCaptures(): Promise<BackendCapture[]> {
+  return fetchApi<BackendCapture[]>('/api/captures');
+}
+
+/** GET /api/captures/{id} */
+export async function getCaptureDetail(id: string): Promise<BackendCapture> {
+  return fetchApi<BackendCapture>(`/api/captures/${id}`);
+}
+
+// ─── Findings ─────────────────────────────────────────────────────────────
+
+export interface BackendFinding {
+  id: string;
+  title: string;
+  description: string;
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  status: string;
+  category: string;
+  risk_score: number;
+  confidence: number;
+  source_ip?: string;
+  destination_ip?: string;
+  flow_id?: string;
+  flow_ids: string[];
+  first_seen: string;
+  last_seen: string;
+  capture_id: string;
+  sensor_id: string;
+  flow?: any;
+  ai_explanation?: any;
+}
+
+/** GET /api/findings */
+export async function getFindings(): Promise<BackendFinding[]> {
+  return fetchApi<BackendFinding[]>('/api/findings');
+}
+
+/** GET /api/findings/{id} */
+export async function getFindingDetail(id: string): Promise<BackendFinding> {
+  return fetchApi<BackendFinding>(`/api/findings/${id}`);
+}
+
+// ─── Incidents ────────────────────────────────────────────────────────────
+
+export interface BackendIncident {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  risk_score: number;
+  confidence: number;
+  source_ips: string[];
+  finding_ids: string[];
+  capture_id: string;
+  sensor_ids: string[];
+  first_seen: string;
+  last_seen: string;
+  alert_count: number;
+  findings?: any[];
+}
+
+/** GET /api/incidents */
+export async function getIncidents(): Promise<BackendIncident[]> {
+  return fetchApi<BackendIncident[]>('/api/incidents');
+}
+
+/** GET /api/incidents/{id} */
+export async function getIncidentDetail(id: string): Promise<BackendIncident> {
+  return fetchApi<BackendIncident>(`/api/incidents/${id}`);
+}
+
+// ─── Sensors ──────────────────────────────────────────────────────────────
+
+export interface BackendSensor {
+  id: string;
+  name: string;
+  hostname: string;
+  os: string;
+  version: string;
+  interface: string;
+  status: 'online' | 'degraded' | 'offline';
+  last_seen: string;
+  capture_engine: Record<string, any>;
+  metrics: Record<string, any>;
+}
+
+/** GET /api/sensors */
+export async function getSensors(): Promise<BackendSensor[]> {
+  return fetchApi<BackendSensor[]>('/api/sensors');
+}
+
+/** GET /api/sensors/{id} */
+export async function getSensorDetail(id: string): Promise<BackendSensor> {
+  return fetchApi<BackendSensor>(`/api/sensors/${id}`);
+}
+
+// ─── Timeline ─────────────────────────────────────────────────────────────
+
+export interface TimelineEvent {
+  id: string;
+  type: 'alert' | 'capture' | 'info';
+  timestamp: string;
+  title: string;
+  description: string;
+  severity: string;
+  risk_score: number;
+  source_ip?: string;
+  destination_ip?: string;
+  flow_id?: string;
+}
+
+/** GET /api/timeline */
+export async function getTimeline(): Promise<TimelineEvent[]> {
+  return fetchApi<TimelineEvent[]>('/api/timeline');
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────
+
+export interface BackendNotification {
+  id: string;
+  type: 'error' | 'warning' | 'info' | 'success';
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+  link?: string;
+}
+
+/** GET /api/notifications */
+export async function getNotifications(): Promise<BackendNotification[]> {
+  return fetchApi<BackendNotification[]>('/api/notifications');
+}
+
+// ─── System Health ────────────────────────────────────────────────────────
+
+export interface SystemHealthResponse {
+  overall: string;
+  timestamp: string;
+  components: Array<{
+    name: string;
+    status: string;
+    latency_ms: number;
+    details: string;
+  }>;
+}
+
+/** GET /api/system/health */
+export async function getSystemHealthFull(): Promise<SystemHealthResponse> {
+  return fetchApi<SystemHealthResponse>('/api/system/health');
+}
+
+/** GET /api/ai/providers */
+export async function getAIProviders(): Promise<Record<string, any>> {
+  return fetchApi<Record<string, any>>('/api/ai/providers');
+}
+
+/** POST /api/ai/providers */
+export async function switchAIProvider(provider: string): Promise<Record<string, any>> {
+  return fetchApi<Record<string, any>>('/api/ai/providers', {
+    method: 'POST',
+    body: JSON.stringify({ provider }),
+  });
+}

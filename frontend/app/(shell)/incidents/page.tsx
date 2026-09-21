@@ -2,15 +2,46 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getIncidents } from '@/lib/mock/services';
+import { getIncidents as getApiIncidents } from '@/lib/api';
+import { getIncidents as getMockIncidents } from '@/lib/mock/services';
 import type { Incident } from '@/lib/types';
 import { formatTimestamp } from '@/lib/utils';
 
 export default function IncidentsPage() {
-  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [incidents, setIncidents] = useState<Array<any>>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getIncidents().then(setIncidents);
+    let mounted = true;
+    async function loadData() {
+      try {
+        const apiData = await getApiIncidents();
+        if (mounted) {
+          setIncidents((apiData || []).map(i => ({
+            id: i.id,
+            title: i.title,
+            description: i.description,
+            status: i.status || 'investigating',
+            riskScore: i.risk_score,
+            confidence: i.confidence || 85,
+            firstSeen: i.first_seen,
+            findingIds: i.finding_ids || [],
+            hostIds: i.source_ips || [],
+            captureIds: i.capture_id ? [i.capture_id] : [],
+            aiSummary: i.description,
+          })));
+          setLoading(false);
+        }
+      } catch (e) {
+        console.warn('Backend API failed loading incidents', e);
+        if (mounted) {
+          setIncidents([]);
+          setLoading(false);
+        }
+      }
+    }
+    loadData();
+    return () => { mounted = false; };
   }, []);
 
   return (
@@ -37,7 +68,7 @@ export default function IncidentsPage() {
           <div>
             <span className="text-[#7C8798] uppercase tracking-wider block text-[0.6rem]">Investigating</span>
             <span className="text-[#F59E0B] font-bold text-sm">
-              {incidents.filter(i => i.status === 'investigating').length}
+              {incidents.filter(i => i.status === 'investigating' || i.status === 'open').length}
             </span>
           </div>
         </div>
@@ -45,7 +76,15 @@ export default function IncidentsPage() {
 
       {/* INCIDENTS CARDS GRID */}
       <div className="space-y-4">
-        {incidents.map((incident) => (
+        {loading ? (
+          <div className="p-8 text-center border border-[#1E293B]/60 bg-[#060910] text-[#7C8798] uppercase text-[0.65rem]">
+            Loading Security Incidents...
+          </div>
+        ) : incidents.length === 0 ? (
+          <div className="p-12 text-center border border-[#1E293B]/60 bg-[#060910] text-[#7C8798] uppercase text-[0.65rem]">
+            No active security incidents correlated.
+          </div>
+        ) : incidents.map((incident) => (
           <div key={incident.id} className="border border-[#F43F5E]/40 bg-[#090d16] p-5 space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-[#1E293B]/60 pb-3">
               <div className="flex items-center gap-3">
@@ -94,3 +133,4 @@ export default function IncidentsPage() {
     </div>
   );
 }
+

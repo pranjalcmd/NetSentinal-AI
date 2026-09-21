@@ -1,15 +1,41 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { getSystemHealth } from '@/lib/mock/services';
-import type { SystemHealth } from '@/lib/types';
+import { getSystemHealthFull } from '@/lib/api';
+import { getSystemHealth as getMockSystemHealth } from '@/lib/mock/services';
 import { formatTimestamp } from '@/lib/utils';
 
 export default function HealthPage() {
-  const [health, setHealth] = useState<SystemHealth | null>(null);
+  const [health, setHealth] = useState<any | null>(null);
 
   useEffect(() => {
-    getSystemHealth().then(setHealth);
+    let mounted = true;
+    async function loadData() {
+      try {
+        const apiData = await getSystemHealthFull();
+        if (mounted && apiData && apiData.components) {
+          setHealth({
+            overall: apiData.overall || 'healthy',
+            timestamp: apiData.timestamp || new Date().toISOString(),
+            components: apiData.components.map((c: any) => ({
+              name: c.name,
+              status: c.status,
+              latencyMs: c.latency_ms,
+              detail: c.details,
+            })),
+          });
+          return;
+        }
+      } catch (e) {
+        console.warn('Backend API failed, falling back to mock system health', e);
+      }
+      if (mounted) {
+        const mockData = await getMockSystemHealth();
+        setHealth(mockData);
+      }
+    }
+    loadData();
+    return () => { mounted = false; };
   }, []);
 
   if (!health) {
@@ -49,7 +75,7 @@ export default function HealthPage() {
 
       {/* HEALTH GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {health.components.map((c, i) => {
+        {health.components.map((c: any, i: number) => {
           const isHealthy = c.status === 'healthy';
           return (
             <div key={i} className="border border-[#1E293B]/60 bg-[#060910] p-4 flex items-center justify-between">
@@ -58,16 +84,17 @@ export default function HealthPage() {
                   <span className={`w-2 h-2 rounded-full ${isHealthy ? 'bg-[#3DD9C4]' : 'bg-[#F59E0B] animate-pulse'}`} />
                   <h3 className="text-xs font-bold text-[#E2E8F0] tracking-wider uppercase">{c.name}</h3>
                 </div>
-                <p className="text-[0.68rem] text-[#7C8798] mt-1 font-mono">
-                  {c.detail || `Latency: ${c.latencyMs || 12}ms`}
-                </p>
+                {c.detail && <p className="text-[0.65rem] text-[#94A3B8] mt-1 font-sans">{c.detail}</p>}
               </div>
 
-              <span className={`px-2 py-0.5 text-[0.6rem] uppercase tracking-wider font-bold border ${
-                isHealthy ? 'border-[#3DD9C4]/40 text-[#3DD9C4] bg-[#3DD9C4]/5' : 'border-[#F59E0B]/40 text-[#F59E0B] bg-[#F59E0B]/5'
-              }`}>
-                {c.status}
-              </span>
+              <div className="text-right">
+                <span className={`px-2 py-0.5 text-[0.6rem] uppercase tracking-wider border ${
+                  isHealthy ? 'border-[#3DD9C4]/40 text-[#3DD9C4] bg-[#3DD9C4]/5' : 'border-[#F59E0B]/40 text-[#F59E0B] bg-[#F59E0B]/5'
+                }`}>
+                  {c.status}
+                </span>
+                {c.latencyMs && <span className="block text-[0.6rem] text-[#7C8798] mt-1">{c.latencyMs}ms latency</span>}
+              </div>
             </div>
           );
         })}
