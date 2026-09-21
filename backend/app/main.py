@@ -463,7 +463,11 @@ async def agent_ingest(payload: dict):
 @app.get("/api/captures", tags=["captures"])
 def list_captures():
     """Return analysis jobs as forensic captures."""
-    jobs_list = job_runner.list_jobs()
+    try:
+        jobs_list = db.list_jobs()
+    except Exception:
+        jobs_list = sorted(store.jobs.values(), key=lambda j: j.get("created_at", ""), reverse=True)
+
     demo_loaded = len(store.flows) > 0
 
     captures = []
