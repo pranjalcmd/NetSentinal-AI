@@ -1,12 +1,18 @@
-"""Orchestration: nDPI flows -> transparent rules + ML -> fused alerts.
+"""Orchestration: nDPI flows -> detection engine -> alerts + incidents.
 
-Both detection layers run on every flow. Rules stay explainable; the ML
-engine adds behavioural findings the rules do not cover. The fused alert
-keeps evidence from both so an analyst can see why it fired.
+Thin on purpose. The pipeline lives in `detection.engine`; this module only
+feeds it a capture and projects the result into the alert shape the ByteGuard
+API and frontend already read.
+
+One important change from the original scaffold: the engine is called once with
+the *whole* capture, not once per flow. Cross-flow detectors (port scan,
+lateral fan-out, many-sources floods, destination novelty) need the capture as
+context, and correlation needs every finding before it can group them.
 """
 from datetime import datetime, timezone
 
-from detection.rules.basic import build_alert, evaluate_flow
+from detection.engine import run_detection
+from detection.scoring import SEVERITY_ORDER
 from dpi.ndpi_adapter import NDPIAdapter
 from ml.detection_engine import DetectionEngine
 
@@ -15,6 +21,27 @@ from backend.app.services.store import store
 
 adapter = NDPIAdapter()
 ml_engine = DetectionEngine(settings.model_path)
+
+# Alerts are a *queue*, findings are the *record*. Every finding is stored and
+# drillable; only findings at or above this severity raise an alert. Measured by
+# `python scripts/benchmark.py --all` on data/dataset.json (4000 labelled flows,
+# 52% benign), which prints this table directly:
+#
+#     threshold   precision  recall     F1     FPR   alerts  false alarms
+#     INFO            0.821   1.000   0.902   0.201    2339           419
+#     LOW             0.839   1.000   0.912   0.177    2289           369
+#     MEDIUM          0.888   0.933   0.910   0.108    2017           225     <- default
+#     HIGH            0.990   0.156   0.270   0.001     303             3
+#     CRITICAL        0.000   0.000   0.000   0.000       0             0
+#
+# LOW edges MEDIUM on F1 by 0.002 while producing 64% more false alarms, so the
+# cut is not made on F1: MEDIUM is the lowest false-positive rate that still
+# keeps recall above 0.9. HIGH trades away 78% of recall for a near-zero false
+# alarm rate, which is why it is the escalation band and not the alert cut.
+# CRITICAL needs all five fusion sources agreeing; nothing in this dataset gets
+# there. tests/detection/test_engine.py pins all of this, so a rule change that
+# moves it fails the suite instead of silently outdating this comment.
+ALERT_MIN_SEVERITY = "MEDIUM"
 
 # ML label -> label shown in the ByteGuard alert table.
 THREAT_LABELS = {
@@ -29,25 +56,72 @@ THREAT_LABELS = {
     "BENIGN": "Benign",
 }
 
+# Finding category -> the same table's label, for findings no ML label covers.
+CATEGORY_LABELS = {
+    "COMMAND_AND_CONTROL": "Botnet C2",
+    "DNS_ANOMALY": "DNS Tunneling",
+    "RECONNAISSANCE": "Port Scan",
+    "LATERAL_MOVEMENT": "Lateral Movement",
+    "EXFILTRATION": "Data Exfiltration",
+    "DENIAL_OF_SERVICE": "Denial of Service",
+    "UNEXPECTED_SERVICE": "Legacy Service",
+    "CREDENTIAL_ACCESS": "Brute Force",
+    "POLICY_VIOLATION": "Policy Violation",
+    "TRAFFIC_ANOMALY": "Suspicious Traffic",
+    "UNKNOWN_SUSPICIOUS_BEHAVIOR": "Suspicious Traffic",
+}
 
-def analyse_flows(flows: list[dict]) -> dict:
-    """Analyse a batch of normalized flows and replace the store contents."""
+
+def analyse_flows(flows: list[dict], capture_id: str | None = None,
+                  replace: bool = True) -> dict:
+    """Analyse a batch of normalized flows.
+
+    `replace=True` (a pcap upload) makes the batch the working set.
+    `replace=False` (a live agent flush) merges it into the working set and
+    re-runs detection over the union: a 10-second batch on its own has no
+    cross-flow context, and every detector above rule level needs one
+    (see the module docstring). Merging is by `flow_id`, so a replayed batch
+    updates its flows instead of duplicating them.
+    """
+    carried = [] if replace else list(store.flows.values())
     store.reset()
 
+    merged = {flow["flow_id"]: flow for flow in carried}
     for flow in flows:
-        flow_id = flow.get("flow_id")
-        if not flow_id:
-            continue
+        if flow.get("flow_id"):
+            merged[flow["flow_id"]] = flow
+    flows = list(merged.values())
+    if not replace:
+        # ponytail: newest-N window, no time-based eviction. Swap for a
+        # timestamp cut if a slow trickle should still age out on its own.
+        flows = flows[-settings.max_live_flows:]
 
-        store.flows[flow_id] = flow
+    for flow in flows:
+        store.flows[flow["flow_id"]] = flow
 
-        findings = evaluate_flow(flow)
-        ml_result = ml_engine.predict(flow)
-        flow["ml_detection"] = ml_result
+    result = run_detection(flows, ml_engine, capture_id=capture_id)
 
-        alert = _fuse(flow, build_alert(flow, findings), ml_result)
-        if alert:
-            store.alerts[alert["alert_id"]] = alert
+    for flow_id, ml_result in result.ml_by_flow.items():
+        if flow_id in store.flows:
+            store.flows[flow_id]["ml_detection"] = ml_result
+
+    for finding in result.findings:
+        store.findings[finding.finding_id] = finding.to_dict()
+    for incident in result.incidents:
+        store.incidents[incident.incident_id] = incident.to_dict()
+
+    # One alert per flow, carrying every finding raised on it.
+    by_flow: dict[str, list] = {}
+    for finding in result.findings:
+        for flow_id in finding.related_flows:
+            by_flow.setdefault(flow_id, []).append(finding)
+
+    for flow_id, findings in by_flow.items():
+        findings.sort(key=lambda f: (SEVERITY_ORDER.get(f.severity, -1), f.risk), reverse=True)
+        if SEVERITY_ORDER.get(findings[0].severity, -1) < SEVERITY_ORDER[ALERT_MIN_SEVERITY]:
+            continue    # kept as findings in the store, just not queued as an alert
+        alert = _alert(store.flows[flow_id], findings, result.ml_by_flow.get(flow_id))
+        store.alerts[alert["alert_id"]] = alert
 
     return summary()
 
@@ -56,43 +130,48 @@ def analyse_flows(flows: list[dict]) -> dict:
 analyse_fixture = analyse_flows
 
 
-def _fuse(flow: dict, alert: dict | None, ml: dict) -> dict | None:
-    """Merge the rule alert and the ML verdict into one alert, or None."""
-    ml_fired = ml["threat_category"] != "BENIGN"
+def _alert(flow: dict, findings: list, ml: dict | None) -> dict:
+    """Project a flow's findings into the existing alert contract.
 
-    if alert is None:
-        if not ml_fired:
-            return None
-        alert = {
-            "flow_id": flow["flow_id"],
-            "rule_ids": ["ML_DETECTION"],
-            "title": THREAT_LABELS.get(ml["threat_category"], ml["threat_category"]),
-            "severity": ml["severity"],
-            "risk_score": ml["risk_score"],
-            "evidence": list(ml["evidence"]),
-        }
-    else:
-        # Take the higher of the two scores, and the severity that goes with it.
-        if int(ml["risk_score"]) >= int(alert["risk_score"]):
-            alert["risk_score"] = int(ml["risk_score"])
-            alert["severity"] = ml["severity"]
-        alert["evidence"] = list(dict.fromkeys(alert["evidence"] + ml["evidence"]))
-        if ml_fired:
-            alert["rule_ids"] = list(dict.fromkeys(alert["rule_ids"] + ["ML_DETECTION"]))
+    The alert is a *view*; the findings and incidents in the store are the real
+    detection output. The top finding (highest risk) drives the headline so the
+    table shows the strongest behaviour rather than an averaged blur.
+    """
+    top = findings[0]
+    ml = ml or {}
+    label = THREAT_LABELS.get(ml.get("threat_category")) if ml.get(
+        "threat_category") not in (None, "BENIGN") else None
 
-    alert["alert_id"] = f"A-{flow['flow_id']}"
-    alert["created_at"] = datetime.now(timezone.utc).isoformat()
-    alert["ml"] = ml
-
-    # Field aliases the ByteGuard frontend reads directly.
-    alert["id"] = alert["alert_id"]
-    alert["entity"] = flow.get("source_ip", "unknown")
-    alert["type"] = THREAT_LABELS.get(ml["threat_category"], "Suspicious Traffic")
-    alert["risk"] = alert["risk_score"]
-    alert["level"] = alert["severity"].title()
-    alert["status"] = "Open"
-    alert["time"] = _relative(flow.get("timestamp"))
-    return alert
+    return {
+        "alert_id": f"A-{flow['flow_id']}",
+        "flow_id": flow["flow_id"],
+        "rule_ids": list(dict.fromkeys(rid for f in findings for rid in f.rule_ids)) or ["ML_DETECTION"],
+        "title": top.summary,
+        "severity": top.severity,
+        "risk_score": top.risk,
+        "confidence": top.confidence,
+        "evidence": list(dict.fromkeys(fact for f in findings for fact in f.observed_facts)),
+        # Detection-engine output the UI can drill into (PRD §23/§24/§25).
+        "category": top.category,
+        "behavior_family": top.behavior_family,
+        "attribution": top.attribution,
+        "confidence_factors": top.confidence_factors,
+        "missing_evidence": top.missing_evidence,
+        "alternative_explanations": top.alternative_explanations,
+        "recommended_next_steps": top.recommended_next_steps,
+        "finding_ids": [f.finding_id for f in findings],
+        "incident_id": top.incident_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "ml": ml,
+        # Field aliases the ByteGuard frontend reads directly.
+        "id": f"A-{flow['flow_id']}",
+        "entity": flow.get("source_ip", "unknown"),
+        "type": label or CATEGORY_LABELS.get(top.category, "Suspicious Traffic"),
+        "risk": top.risk,
+        "level": top.severity.title(),
+        "status": "Open",
+        "time": _relative(flow.get("timestamp")),
+    }
 
 
 def _relative(timestamp: str | None) -> str:
@@ -121,7 +200,7 @@ def summary() -> dict:
         application = flow.get("application", "UNKNOWN")
         protocols[application] = protocols.get(application, 0) + 1
 
-    risks = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+    risks = {"INFO": 0, "LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
     for alert in alerts:
         severity = alert.get("severity", "LOW")
         if severity in risks:
@@ -132,9 +211,13 @@ def summary() -> dict:
         "suspicious_flows": len(alerts),
         "high_risk": sum(1 for a in alerts if a.get("severity") in {"HIGH", "CRITICAL"}),
         "protocols": len(protocols),
+        "incidents": len(store.incidents),
         "risk_distribution": risks,
         "protocol_distribution": protocols,
         "recent_alerts": sorted(
             alerts, key=lambda a: a["created_at"], reverse=True
         )[:10],
+        "top_incidents": sorted(
+            store.incidents.values(), key=lambda i: i["risk"], reverse=True
+        )[:5],
     }

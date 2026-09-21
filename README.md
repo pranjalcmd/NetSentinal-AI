@@ -1,6 +1,6 @@
-# PRISM — Explainable Threat Analytics & Security Advisory
+# NetSentinel AI
 
-PRISM refracts complex network traffic into clear, explainable threat intelligence. Takes a packet capture, identifies
+AI-assisted network traffic intelligence. Takes a packet capture, identifies
 the application behind every flow with deep packet inspection, scores each flow
 with a transparent rule engine **and** a DPI-aware ML classifier, and serves the
 result to a SOC-style React frontend.
@@ -16,8 +16,8 @@ result to a SOC-style React frontend.
    (`ml/detection_engine.py`), then fuses the two into one alert.
 5. Projects the flow table onto an entity graph for the network explorer and
    the pathfinder.
-6. Explains alerts in plain language — mock text by default, Claude when you
-   supply a key.
+6. Explains alerts in plain language — mock text by default, Gemini (or any
+   configured provider) when you supply a key.
 
 ## MVP boundary
 
@@ -39,15 +39,56 @@ AI_API_KEY=sk-ant-...
 That is the only change needed. Nothing else reads the key, and nothing else
 has to be edited.
 
-- Empty or missing → `/api/alerts/{id}/explain` and `/api/ai/ask` return the
-  mock analyst text. Everything else works identically.
-- Set → the same two endpoints call Claude (`claude-opus-5`, override with
-  `AI_MODEL`), with structured JSON output. Verdict, severity, confidence and
-  evidence still come from the detection engines; the model only writes the
-  narrative.
-- Confirm which one is live: `GET /api/health` → `"ai_provider": "mock" | "claude"`.
-- A live call that fails degrades to the mock instead of 500-ing the UI.
-- `pip install anthropic` if you have not installed the full requirements file.
+`AI_API_KEY` also accepts a **comma-separated pool**:
+
+```
+AI_API_KEY=key-one,key-two,key-three
+```
+
+The Gemini free tier caps requests per key per day, which a single demo run
+exceeds. On a `429` the service moves to the next key; on a transient `5xx` it
+retries the same one after a short pause. Only when the pool is exhausted does
+it fall back to the mock analyst, and `/api/health` reports the last provider
+error verbatim (with every key redacted) so a spent key never looks like
+"no key set".
+
+- Empty or missing → `/api/alerts/{id}/explain`, `/api/ai/ask` and
+  `/api/ai/report` return the mock analyst text. Everything else works
+  identically.
+- Set → the same endpoints call a real model, with structured JSON output.
+  Verdict, severity, confidence and evidence still come from the detection
+  engines; the model only writes the narrative.
+- Which provider: `AI_MODEL=gemini-3.6-flash` (default) uses Google's native
+  `generateContent`; `claude-*` uses the Anthropic Messages API; anything else
+  uses the OpenAI-compatible shape. `AI_PROVIDER` overrides the inference.
+  Model names are not interchangeable between them — `gemini-2.5-flash` and
+  older are retired for new keys and will 400/404.
+- Confirm which one is live: `GET /api/health` → `"ai_provider"`.
+- A live call that fails degrades to the mock instead of 500-ing the UI, and
+  `GET /api/health` reports why in `"ai_last_error"` (status, host, and the
+  provider's own message, with the key redacted). Without it a rejected key and
+  a wrong model name look identical.
+- No provider SDK is needed — the calls are plain `httpx`, already a dependency.
+
+### Two guarantees the model cannot override
+
+Both are enforced in `backend/app/services/ai_service.py` after the response
+comes back, because a prompt is a request and a filter is a guarantee. Both were
+added after watching Gemini violate them in a live test.
+
+- **§46 — what leaves the process.** Only normalized telemetry goes out:
+  protocol, flow statistics, selected metadata, rule findings and nDPI risk
+  names. `minimize()` is an allowlist, so it fails closed — a new field added
+  upstream is never silently sent. Raw payloads, passwords, cookies, bearer
+  tokens and authorization headers cannot reach a provider even if a future
+  caller passes them in.
+- **§12 / §66 — what comes back.** Certainty language is reworded ("DNS
+  tunneling **confirmed**" → "consistent with", "the host **is compromised**" →
+  "may be"), and recommendations to block, isolate, quarantine or remediate are
+  dropped rather than reworded, since this product investigates and does not act.
+
+`tests/test_ai_layer.py` covers the wire protocol, the minimization, and both
+filters — offline, with no key, by intercepting HTTP.
 
 `backend/.env` works too and takes priority if both files exist.
 
@@ -69,8 +110,19 @@ uvicorn backend.app.main:app --reload  # http://localhost:8000
 ```bash
 cd frontend
 npm install
-npm run dev        # http://localhost:3000, proxies /api to :8000
+npm run dev        # http://localhost:3000
 ```
+
+The frontend calls the API directly at `NEXT_PUBLIC_API_URL`, which defaults to
+`http://localhost:8000`. Set it in `frontend/.env.local` to point elsewhere:
+
+```bash
+NEXT_PUBLIC_API_URL=https://your-api.example.com
+```
+
+Run the backend first. With it down every page still renders, falling back to
+the bundled sample capture, and the shell says so in a banner across the top —
+so a demo never silently shows fixtures as if they were live.
 
 The backend preloads 150 flows from `data/dataset.json` at startup, so every
 view has real data before you upload anything. No dataset → it falls back to
@@ -79,11 +131,19 @@ view has real data before you upload anything. No dataset → it falls back to
 ### Verify everything
 
 ```bash
-python -m pytest tests -q       # 92 tests: rules, scoring, graph, DPI, L7 parsers
-python scripts/smoke_api.py     # every endpoint, in-process, no server needed
-python scripts/benchmark.py     # accuracy / F1 / throughput report
-python -m dpi.l7                # L7 parser self-check, no deps
+python -m pytest -q                  # 268 tests: rules, scoring, graph, DPI, L7, AI, persistence, ingest
+python scripts/smoke_api.py          # every endpoint, in-process, no server needed
+python scripts/benchmark.py          # accuracy / F1 / throughput report
+python -m dpi.l7                     # L7 parser self-check, no deps
+python -m backend.app.services.db    # schema + round-trip self-check, temp file
+python scripts/live_ai_check.py      # the only one that hits the network (needs a key)
 ```
+
+Everything above is offline. `live_ai_check.py` is the exception: it calls the
+configured provider for real on `explain`, `ask` and `report`, and **fails if
+the call fell back to mock** — so a rejected key or a retired model name cannot
+pass as green. It checks the returned body, not the status code, and re-runs the
+§12/§66 filters over genuine model output rather than a fixture.
 
 ---
 
@@ -99,11 +159,13 @@ python -m dpi.l7                # L7 parser self-check, no deps
 | `/api/alerts/{id}` | GET | Alert + its flow + any cached AI explanation |
 | `/api/alerts/{id}/explain` | POST | AI explanation for one alert |
 | `/api/ai/ask` | POST | AI Investigation tab — `{question}` → `{answer, evidence[]}` |
+| `/api/ai/report` | POST | Capture-level AI briefing — summary, priorities, caveats |
 | `/api/pathfinder` | POST | Pathfinder tab — `{from, to}` → `{path[], hops, suspicious}` |
 | `/api/flows`, `/api/flows/{id}` | GET | Raw normalized flows |
 | `/api/demo/load` | POST | Re-analyse the demo traffic |
 | `/api/analyze/pcap` | POST | Upload a capture (multipart `file`) |
-| `/api/jobs` | GET | Analysis job history |
+| `/api/jobs` | GET | Analysis job history (from SQLite, survives restart) |
+| `/api/jobs/{id}/load` | POST | Reopen a stored capture into the live views |
 
 The frontend was not modified. Two consequences worth knowing:
 
@@ -113,6 +175,42 @@ The frontend was not modified. Two consequences worth knowing:
 - `/api/pathfinder` returns **404** when either endpoint is not in the analysed
   capture. That is deliberate: the frontend then renders its own bundled example
   and flips its badge to "Demo data", which is the honest signal.
+
+---
+
+## Persistence
+
+SQLite at `DATABASE_PATH` (default `./netsentinel.db`), stdlib `sqlite3`, schema
+from PRD §32. Created on first boot; nothing to install or migrate.
+
+The split is the part worth knowing:
+
+- **`MemoryStore` is the working set** — whatever capture is on screen. Every
+  read endpoint still goes through it, so nothing queries SQL on the hot path.
+- **SQLite is the record** — written once when a capture finishes analysing.
+
+So a restart no longer loses the analysis: `GET /api/jobs` lists stored
+captures newest-first, and `POST /api/jobs/{id}/load` puts one back into the
+live views. Alerts, findings, incidents, the graph and the pathfinder all serve
+a restored capture with no special case, because each row stores the object the
+store held, not just §32's queryable columns — otherwise ML output, confidence
+factors and alternative explanations would vanish on the round trip.
+
+Two things the schema does that §32 does not spell out:
+
+- **Composite primary keys.** `flow_id` is `F-0001` in *every* capture (the
+  reader numbers per file), so `alert_id` is `A-F-0001` in every capture too.
+  Keyed on those alone, a second upload silently overwrites the first.
+- **Retention.** `MAX_STORED_JOBS` (default 50) captures are kept; older ones
+  are deleted with their flows, alerts, findings and incidents via
+  `ON DELETE CASCADE`. Unbounded history is a slow disk leak.
+
+A failed database write logs and is swallowed — the analysis is already done
+and in the store, so a full disk must not turn a successful capture into a 500.
+
+`tests/test_persistence.py` covers the round trip, the id collision, retention
+and the §47 filename rule; `python -m backend.app.services.db` self-checks the
+schema against a temp file.
 
 ---
 
@@ -185,7 +283,10 @@ window) still falls back to the well-known port.
 Porting the DNS name extractor also fixed a **train/serve skew bug**:
 `dns_query_entropy` was measuring the entropy of the *list of query lengths*
 (`"[45, 52]"`), while the training set defines it as the entropy of the query
-*name characters*. It now measures the same thing at both ends.
+*name characters*. It is now the mean entropy of the individual names — not of
+every name concatenated, which measures variety *across* lookups instead of
+randomness *within* one and climbs with flow size (three ordinary hostnames
+scored 3.65 against a 3.5 threshold). Both ends now measure one name at a time.
 
 To get nDPI protocol IDs and risk flags on top of this, build nDPI
 (https://github.com/ntop/nDPI) and point `NDPI_READER` at the binary — no other
@@ -300,15 +401,29 @@ backend/app/main.py              all endpoints
 backend/app/core/config.py       settings + .env loading (API key lives here)
 backend/app/services/analysis.py rules + ML fusion, store population
 backend/app/services/graph.py    flows -> entity graph, BFS pathfinder
-backend/app/services/ai_service.py  mock / Claude analyst layer
+backend/app/services/db.py       sqlite persistence (§32), job save / restore
+backend/app/services/ai_service.py  mock / Gemini / OpenAI / Anthropic analyst layer
 detection/                       rules + scoring (transparent, weighted)
 dpi/ndpi_adapter.py              DPI boundary (3 modes)
 dpi/pcap_flows.py                pure-Python pcap reader + flow aggregation
 dpi/l7.py                        TLS SNI / HTTP Host / DNS DPI (Packet_analyzer port)
 ml/detection_engine.py           feature extraction + heuristic + classifier
-scripts/                         generate_dataset, train, benchmark, smoke_api
-frontend/                        ByteGuard React SPA (unmodified)
+scripts/                         generate_dataset, train, benchmark, smoke_api, live_ai_check
+client/netsentinel.js            browser capture agent — one script tag, any site
+client/capture_agent.py          backend capture agent — stdlib only, any Python service
+frontend/                        Next.js dashboard (App Router, Tailwind)
+frontend/lib/api.ts              the single typed client; every backend call goes through it
+frontend/lib/graph-adapter.ts    backend graph -> validated render nodes/edges
+docs/CAPTURE_MODULE.md           how telemetry gets in, and what each route can see
 ```
+
+## Capture module
+
+Three ways in — PCAP upload, a browser agent that installs on any site with one
+script tag, and a stdlib-only Python agent for a service backend. All three
+produce the same normalized flow and enter the same pipeline.
+
+Full contract, privacy guarantees and troubleshooting: **[docs/CAPTURE_MODULE.md](docs/CAPTURE_MODULE.md)**.
 
 ## Team ownership
 

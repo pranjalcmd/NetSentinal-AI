@@ -1,8 +1,16 @@
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Any
 
+# PRD §19 freezes the core shape. The detection engine adds fields on top
+# (confidence, attribution, incidents, capture coverage), so the response models
+# validate the frozen keys and pass the rest through instead of silently
+# dropping them on the way out.
+_PASSTHROUGH = ConfigDict(extra="allow")
+
 class Flow(BaseModel):
+    model_config = _PASSTHROUGH
+
     flow_id: str
     timestamp: datetime
     source_ip: str
@@ -18,6 +26,8 @@ class Flow(BaseModel):
     metadata: dict[str, Any] = {}
 
 class DetectionAlert(BaseModel):
+    model_config = _PASSTHROUGH
+
     alert_id: str
     flow_id: str
     rule_ids: list[str]
@@ -38,6 +48,8 @@ class AIAnalysis(BaseModel):
     caveats: list[str]
 
 class DashboardSummary(BaseModel):
+    model_config = _PASSTHROUGH
+
     total_flows: int
     suspicious_flows: int
     high_risk: int

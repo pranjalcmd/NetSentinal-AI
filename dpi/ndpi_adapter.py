@@ -10,10 +10,11 @@ Three modes, tried in order:
    JSONL it emits. Adds nDPI protocol IDs and flow risk flags.
 2. Sidecar fixture: ``cap.pcap`` -> ``cap.json`` next to it. Lets the team
    demo without a compiled engine.
-3. ``dpi/pcap_flows.py`` + ``dpi/l7.py`` — pure-Python flow extraction with
-   real L7 inspection ported from the Packet_analyzer C++ engine: TLS SNI,
-   HTTP Host and DNS query names are read out of the payload. No C toolchain
-   needed, so this is the path that actually runs on Windows.
+3. ``dpi/pcap_flows.py`` + ``dpi/l7.py`` — the pure-Python capture engine:
+   pcap and pcapng, Ethernet/VLAN/cooked/raw link layers, IPv4 and IPv6, with
+   real L7 inspection ported from the Packet_analyzer C++ engine (TLS SNI,
+   HTTP Host, DNS query names read out of the payload). No C toolchain needed,
+   so this is the path that actually runs on Windows.
 
 On the Packet_analyzer binary specifically: the copy in the drop is a Mach-O
 ARM64 (macOS) build, and it reports aggregate counters plus an SNI list to
@@ -23,7 +24,8 @@ two captures it ships — see tests/test_l7.py.
 
 ponytail: mode 3 has no nDPI risk flags and no protocol-state machine, so an
 app on a non-standard port with no Client Hello in the capture window still
-falls back to the port table. Build nDPI and set NDPI_READER for those.
+falls back to the port table. Build nDPI and set NDPI_READER for those. It
+does not invent risk flags to fill the gap — ``ndpi_risks`` stays empty.
 """
 from __future__ import annotations
 
@@ -35,10 +37,27 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from dpi.pcap_flows import extract_flows as _pcap_extract_flows
+from dpi.pcap_flows import extract_capture
 
 # nDPI L4 proto name -> our transport enum
 _TRANSPORTS = {"TCP", "UDP", "ICMP", "ICMPV6", "SCTP", "IGMP", "GRE"}
+
+
+def _opaque_capture(container: str, flows: list[dict]) -> dict:
+    """Coverage block for a source that reports flows but not packets."""
+    return {
+        "container": container,
+        "link_types": [],
+        "packets_read": 0,
+        "packets_parsed": 0,
+        "packets_truncated": 0,
+        "packets_skipped": {},
+        "coverage": None,          # unknown, which is not the same as complete
+        "flows": len(flows),
+        "started_at": flows[0].get("timestamp") if flows else None,
+        "duration_seconds": None,
+    }
+
 
 
 def find_ndpi_reader() -> str | None:
@@ -180,6 +199,18 @@ class NDPIAdapter:
         return "ndpiReader" if self.reader_path else "python-l7"
 
     def analyze_pcap(self, pcap_path: str) -> list[dict]:
+        """Normalized flows. The boundary PRD §27.1 freezes."""
+        return self.analyze_capture(pcap_path)[0]
+
+    def analyze_capture(self, pcap_path: str) -> tuple[list[dict], dict]:
+        """Flows plus what the reader understood about the capture.
+
+        The second element is coverage, not detection: which container and link
+        layers were seen, how many packets reached flow aggregation and why the
+        rest did not. Only the pure-Python capture engine can report it per
+        packet — ndpiReader and fixture mode say so rather than inventing
+        numbers (PRD §1.2 Principle E).
+        """
         path = Path(pcap_path)
         if not path.exists():
             raise FileNotFoundError(pcap_path)
@@ -187,14 +218,16 @@ class NDPIAdapter:
         if self.reader_path:
             flows = self._run_ndpi_reader(path)
             if flows:
-                return flows
+                return flows, _opaque_capture("ndpiReader", flows)
 
         # Sidecar fixture (demo/offline path).
         fixture = path.with_suffix(".json")
         if fixture.exists():
-            return json.loads(fixture.read_text(encoding="utf-8"))
+            flows = json.loads(fixture.read_text(encoding="utf-8"))
+            return flows, _opaque_capture("fixture", flows)
 
-        return _pcap_extract_flows(str(path))
+        capture = extract_capture(str(path))
+        return capture.flows, capture.stats.to_dict()
 
     def _run_ndpi_reader(self, path: Path) -> list[dict]:
         with tempfile.TemporaryDirectory() as tmp:

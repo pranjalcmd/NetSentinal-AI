@@ -2,12 +2,21 @@
 
     python scripts/benchmark.py
 
-Reports four detectors on the same flows:
+Reports five detectors on the same flows:
 
   rules            detection/rules/basic.py alone (binary: alert or no alert)
   ml-heuristic     DetectionEngine with no trained artifact
   ml-trained       DetectionEngine with models/ndpi_detector.joblib
-  fused            what the API actually returns (rules OR ml)
+  fused            the naive union of the two (rules OR ml) — the baseline the
+                   engine has to beat
+  engine (API)     detection.engine.run_detection: the same two sources fused
+                   with caps, plus DPI, baseline and correlation, cut at the
+                   alert threshold the API actually uses. This is what
+                   /api/analyze/pcap returns.
+
+The engine is also swept across every severity threshold, which is where the
+table in backend/app/services/analysis.py comes from — re-run this after any
+rule or weight change and update that comment with the new numbers.
 
 Multi-class metrics only apply to the ML engines. The rule engine is binary by
 construction, so it is scored binary only — comparing it on 8 classes would be
@@ -35,7 +44,9 @@ from sklearn.metrics import (
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from detection.engine import run_detection  # noqa: E402
 from detection.rules.basic import build_alert, evaluate_flow  # noqa: E402
+from detection.scoring import SEVERITY_ORDER  # noqa: E402
 from dpi.ndpi_adapter import NDPIAdapter  # noqa: E402
 from dpi.pcap_flows import read_packets  # noqa: E402
 from ml.detection_engine import DetectionEngine  # noqa: E402
@@ -44,6 +55,10 @@ DATASET_LABELS = [
     "BENIGN", "BOTNET", "BRUTE_FORCE", "DATA_EXFILTRATION",
     "DNS_TUNNELING", "DOS", "PORT_SCAN", "SUSPICIOUS_LEGACY_SERVICE",
 ]
+
+# Ascending, so the sweep reads from "alert on everything" down to "alert on
+# almost nothing".
+SEVERITY_SWEEP = ["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
 
 
 def _binary(y_true: list[str], detected: list[bool]) -> dict:
@@ -70,6 +85,44 @@ def _timed(fn, flows: list[dict]):
     out = [fn(f) for f in flows]
     elapsed = time.perf_counter() - started
     return out, elapsed, len(flows) / elapsed
+
+
+def _worst_severity_per_flow(result) -> dict[str, str]:
+    """A flow can carry several findings; the alert queue shows the worst one."""
+    worst: dict[str, str] = {}
+    for finding in result.findings:
+        for flow_id in finding.related_flows:
+            if SEVERITY_ORDER[finding.severity] > SEVERITY_ORDER.get(worst.get(flow_id, ""), -2):
+                worst[flow_id] = finding.severity
+    return worst
+
+
+def _engine_sweep(evaluated: list[dict], y_true: list[str], ml: DetectionEngine) -> dict:
+    """Run the real pipeline once, then score every alert threshold on it.
+
+    One run, five thresholds: the severity cut is applied to the findings
+    afterwards, so sweeping it costs nothing extra and the rows are guaranteed
+    to come from the same detection pass.
+    """
+    started = time.perf_counter()
+    result = run_detection(evaluated, ml, capture_id="benchmark")
+    seconds = time.perf_counter() - started
+    worst = _worst_severity_per_flow(result)
+
+    rows = {}
+    for threshold in SEVERITY_SWEEP:
+        detected = [SEVERITY_ORDER.get(worst.get(f["flow_id"], ""), -2)
+                    >= SEVERITY_ORDER[threshold] for f in evaluated]
+        rows[threshold] = _binary(y_true, detected)
+    return {
+        "rows": rows,
+        "seconds": round(seconds, 3),
+        "flows_per_second": round(len(evaluated) / seconds),
+        "findings": len(result.findings),
+        "incidents": len(result.incidents),
+        "ml_available": result.ml_available,
+        "baseline_available": result.baseline_available,
+    }
 
 
 def _matrix_table(y_true: list[str], y_pred: list[str], labels: list[str]) -> str:
@@ -141,6 +194,12 @@ def main() -> None:
         [a is not None or p != "BENIGN" for a, p in zip(rule_alerts, trained_pred)],
     )
 
+    # ---------------- the engine, as the API runs it ----------------
+    from backend.app.services.analysis import ALERT_MIN_SEVERITY  # noqa: PLC0415
+
+    engine = _engine_sweep(evaluated, y_true, trained)
+    engine_binary = engine["rows"][ALERT_MIN_SEVERITY]
+
     # ---------------- binary table ----------------
     print("BINARY DETECTION  (is this flow malicious?)")
     print(f"{'detector':<16}{'acc':>8}{'prec':>8}{'recall':>8}{'F1':>8}{'FPR':>8}"
@@ -149,12 +208,30 @@ def main() -> None:
         ("rules", rules_binary, rules_rate),
         ("ml-heuristic", heur_binary, heur_rate),
         ("ml-trained", trained_binary, trained_rate),
-        ("fused (API)", fused_binary, 1 / (1 / rules_rate + 1 / trained_rate)),
+        ("fused (naive)", fused_binary, 1 / (1 / rules_rate + 1 / trained_rate)),
+        ("engine (API)", engine_binary, engine["flows_per_second"]),
     ):
         print(f"{name:<16}{metrics['accuracy']:>8.4f}{metrics['precision']:>8.4f}"
               f"{metrics['recall']:>8.4f}{metrics['f1']:>8.4f}"
               f"{metrics['false_positive_rate']:>8.4f}"
               f"{metrics['tp']:>7}{metrics['fp']:>7}{metrics['fn']:>7}{rate:>12,.0f}")
+    print()
+
+    # ---------------- alert-threshold sweep ----------------
+    print(f"ALERT THRESHOLD SWEEP  (engine, cut at each severity; "
+          f"ALERT_MIN_SEVERITY = {ALERT_MIN_SEVERITY})")
+    print(f"{'threshold':<16}{'prec':>8}{'recall':>8}{'F1':>8}{'FPR':>8}{'alerts':>9}")
+    for threshold in SEVERITY_SWEEP:
+        row = engine["rows"][threshold]
+        mark = "   <- default" if threshold == ALERT_MIN_SEVERITY else ""
+        print(f"{threshold:<16}{row['precision']:>8.3f}{row['recall']:>8.3f}"
+              f"{row['f1']:>8.3f}{row['false_positive_rate']:>8.3f}"
+              f"{row['tp'] + row['fp']:>9}{mark}")
+    print(f"  {engine['findings']:,} findings over {len(evaluated):,} flows, grouped into "
+          f"{engine['incidents']:,} incidents in {engine['seconds']}s "
+          f"(ML {'on' if engine['ml_available'] else 'OFF'}, "
+          f"baseline {'on' if engine['baseline_available'] else 'OFF'})")
+    print("  Copy this table into backend/app/services/analysis.py when it changes.")
     print()
 
     # ---------------- multi-class ----------------
@@ -234,6 +311,16 @@ def main() -> None:
             "ml_heuristic": heur_binary,
             "ml_trained": trained_binary,
             "fused": fused_binary,
+            "engine": engine_binary,
+        },
+        "engine": {
+            "alert_min_severity": ALERT_MIN_SEVERITY,
+            "threshold_sweep": engine["rows"],
+            "findings": engine["findings"],
+            "incidents": engine["incidents"],
+            "seconds": engine["seconds"],
+            "ml_available": engine["ml_available"],
+            "baseline_available": engine["baseline_available"],
         },
         "multiclass": {
             "ml_heuristic": {
@@ -252,6 +339,7 @@ def main() -> None:
             "rules": round(rules_rate),
             "ml_heuristic": round(heur_rate),
             "ml_trained": round(trained_rate),
+            "engine": engine["flows_per_second"],
         },
         "dpi": dpi,
     }

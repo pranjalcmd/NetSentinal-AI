@@ -11,6 +11,6 @@ pandas>=2.2,<3
 scikit-learn>=1.5,<2
 joblib>=1.4,<2
 
-# AI analyst layer. Only needed once you set AI_API_KEY in .env — without it
-# the backend serves the mock explanations and never imports this.
-anthropic>=1.0,<2
+# AI analyst layer. No SDK needed — Gemini, OpenAI-compatible and Anthropic are
+# all plain JSON over httpx, which is already above. Set AI_API_KEY to go live;
+# with no key the backend serves mock explanations and makes no network calls.

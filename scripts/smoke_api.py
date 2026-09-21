@@ -11,10 +11,18 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+from backend.app.core.config import settings  # noqa: E402
+
+# Redirected before main.py is imported, so the smoke run builds its own throwaway
+# history instead of appending demo jobs to the operator's real database.
+_TMP = tempfile.TemporaryDirectory()
+settings.database_path = str(Path(_TMP.name) / "smoke.db")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -48,8 +56,8 @@ def main() -> None:
 
         print("GET /api/network/graph   (Dashboard + Network Explorer)")
         graph = client.get("/api/network/graph").json()
-        check("nodes + links", bool(graph["nodes"]) and bool(graph["links"]),
-              f"{len(graph['nodes'])} nodes / {len(graph['links'])} links")
+        check("nodes + edges", bool(graph["nodes"]) and bool(graph["edges"]),
+              f"{len(graph['nodes'])} nodes / {len(graph['edges'])} edges")
         node = graph["nodes"][0]
         # TYPE_META in main.jsx keys off `type`; the node label comes from `name`.
         check("node has id/name/type/risk", {"id", "name", "type", "risk"} <= set(node))
@@ -57,8 +65,13 @@ def main() -> None:
               all(n["type"] in {"person", "phone", "vehicle", "location", "organization", "account"}
                   for n in graph["nodes"]))
         check("some node is central", any(n["central"] for n in graph["nodes"]))
-        check("link has source/target/suspicious",
-              {"source", "target", "suspicious"} <= set(graph["links"][0]))
+        check("edge has the PRD §6 shape",
+              {"id", "source", "target", "flow_ids", "bytes", "packets",
+               "risk", "severity"} <= set(graph["edges"][0]))
+        node_ids = {n["id"] for n in graph["nodes"]}
+        check("every edge maps to real nodes and real flows",
+              all(e["source"] in node_ids and e["target"] in node_ids and e["flow_ids"]
+                  for e in graph["edges"]))
 
         print("GET /api/entities")
         entities = client.get("/api/entities").json()
@@ -86,7 +99,9 @@ def main() -> None:
         payload = explained.json()
         check("explain schema", {"threat_category", "severity", "confidence", "summary",
                                  "observed_evidence", "recommendations", "caveats"} <= set(payload))
-        check("provider reported", payload["provider"] in {"mock", "claude"}, payload["provider"])
+        check("provider reported",
+              payload["provider"] in {"mock", "gemini", "openai", "anthropic"},
+              payload["provider"])
 
         print("POST /api/ai/ask   (AI Investigation tab)")
         asked = client.post("/api/ai/ask", json={"question": "which host is the biggest risk?"})
@@ -98,8 +113,23 @@ def main() -> None:
         print(f"       provider={answer['provider']}  {answer['answer'][:110]}...")
         check("400 without a question", client.post("/api/ai/ask", json={}).status_code == 400)
 
+        print("POST /api/ai/report   (capture-level briefing)")
+        briefing = client.post("/api/ai/report")
+        check("200", briefing.status_code == 200)
+        report = briefing.json()
+        check("briefing schema",
+              {"executive_summary", "key_observations", "priorities",
+               "caveats", "provider", "data_notice"} <= set(report))
+        check("priorities name a target + next step",
+              all({"target", "why", "next_step"} <= set(p) for p in report["priorities"]),
+              f"{len(report['priorities'])} priorities")
+        # PRD §46 — the page must say what was sent. Rendered verbatim.
+        check("§46 disclosure present",
+              report["data_notice"].startswith("Only normalized telemetry"))
+        print(f"       provider={report['provider']}  {report['executive_summary'][:100]}...")
+
         print("POST /api/pathfinder   (Pathfinder tab)")
-        link = graph["links"][0]
+        link = graph["edges"][0]
         found = client.post("/api/pathfinder", json={"from": link["source"], "to": link["target"]})
         check("200 for a known pair", found.status_code == 200)
         path = found.json()
@@ -147,6 +177,15 @@ def main() -> None:
         print("GET /api/jobs")
         jobs = client.get("/api/jobs").json()
         check("job history kept", len(jobs) >= 2, f"{len(jobs)} jobs")
+
+        print("POST /api/jobs/{id}/load   (reopen a stored capture)")
+        stored = jobs[0]["job_id"]
+        reloaded = client.post(f"/api/jobs/{stored}/load")
+        check("200", reloaded.status_code == 200)
+        check("capture restored", reloaded.json()["summary"]["total_flows"] > 0,
+              f"{reloaded.json()['summary']['total_flows']} flows from sqlite")
+        check("404 on unknown job",
+              client.post("/api/jobs/nope/load").status_code == 404)
 
     print()
     if FAILURES:
