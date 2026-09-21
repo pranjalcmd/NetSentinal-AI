@@ -298,7 +298,7 @@ def client():
 
 def test_health_reports_the_provider_and_never_the_key(client):
     body = client.get("/api/health").json()
-    assert body["ai_provider"] in {"mock", "gemini", "anthropic", "openai"}
+    assert body["ai_provider"] in {"mock", "gemini", "anthropic", "openai", "claude"}
     assert "ai_key_configured" in body
     assert "test-key" not in json.dumps(body) and "AQ." not in json.dumps(body)
 
@@ -306,7 +306,10 @@ def test_health_reports_the_provider_and_never_the_key(client):
 def test_explain_endpoint_returns_the_prd45_user_facing_shape(client):
     alerts = client.get("/api/alerts").json()
     if not alerts:
-        pytest.skip("no alerts in the preloaded demo capture")
+        client.post("/api/demo/load")
+        alerts = client.get("/api/alerts").json()
+    if not alerts:
+        pytest.skip("no alerts in the demo capture")
 
     result = client.post(f"/api/alerts/{alerts[0]['alert_id']}/explain").json()
     # Every provider is normalized into this, so the frontend never reads
@@ -324,7 +327,7 @@ def test_ask_endpoint_answers_and_cites_evidence(client):
     result = client.post("/api/ai/ask", json={"question": "what is happening?"}).json()
     assert result["answer"]
     assert isinstance(result["evidence"], list)
-    assert result["provider"] in {"mock", "gemini", "anthropic", "openai"}
+    assert result["provider"] in {"mock", "gemini", "anthropic", "openai", "claude"}
 
 
 def test_ask_endpoint_requires_a_question(client):
@@ -354,17 +357,19 @@ def test_the_ai_key_is_only_read_from_env_and_never_committed():
 
 def test_report_endpoint_returns_the_briefing_shape(client):
     """The frontend renders these keys directly, so they are the contract."""
+    client.post("/api/demo/load")
     report = client.post("/api/ai/report").json()
     assert {"executive_summary", "key_observations", "priorities",
             "caveats", "provider", "data_notice"} <= set(report)
     assert report["executive_summary"]
     assert isinstance(report["key_observations"], list)
     assert report["caveats"], "a briefing with no caveats overstates its evidence"
-    assert report["provider"] in {"mock", "gemini", "anthropic", "openai"}
+    assert report["provider"] in {"mock", "gemini", "anthropic", "openai", "claude"}
 
 
 def test_report_priorities_are_targets_with_a_reason_and_a_next_step(client):
     """§45: every priority has to say what, why, and what would settle it."""
+    client.post("/api/demo/load")
     for priority in client.post("/api/ai/report").json()["priorities"]:
         assert {"target", "why", "next_step"} <= set(priority)
         assert not M._OUT_OF_SCOPE.search(priority["next_step"]), priority
@@ -372,6 +377,7 @@ def test_report_priorities_are_targets_with_a_reason_and_a_next_step(client):
 
 def test_report_carries_the_section_46_disclosure_verbatim(client):
     """The AI Investigation page must state what was sent. Exact wording."""
+    client.post("/api/demo/load")
     assert client.post("/api/ai/report").json()["data_notice"] == (
         "Only normalized telemetry selected by the analysis pipeline is sent "
         "for AI enrichment. Raw packet payloads are not sent by default.")

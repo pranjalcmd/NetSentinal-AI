@@ -124,9 +124,8 @@ Run the backend first. With it down every page still renders, falling back to
 the bundled sample capture, and the shell says so in a banner across the top —
 so a demo never silently shows fixtures as if they were live.
 
-The backend preloads 150 flows from `data/dataset.json` at startup, so every
-view has real data before you upload anything. No dataset → it falls back to
-`samples/demo_flows.json`.
+The backend initializes cleanly with an empty store by default. You can load demo traffic flows into the active pipeline at any time by selecting "Live Traffic Ingest" or POSTing to `/api/demo/load`.
+
 
 ### Verify everything
 
