@@ -1,3 +1,4 @@
+
 /**
  * NetSentinal AI — Mock Service Layer
  *
@@ -10,7 +11,7 @@
  *
  * In production, swap these for real fetch() calls against the backend API.
  */
-
+ 
 import type {
   Customer,
   Engagement,
@@ -34,7 +35,7 @@ import type {
   SearchResult,
   ListFilters,
 } from '../types'
-
+ 
 import {
   MOCK_CUSTOMER,
   MOCK_ENGAGEMENT,
@@ -66,11 +67,11 @@ import {
   MOCK_SYSTEM_HEALTH,
   MOCK_NOTIFICATIONS,
 } from './data'
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Simulates a network request delay.
  * @param min - Minimum delay in ms (default 50)
@@ -81,7 +82,7 @@ function delay(min = 50, max = 150): Promise<void> {
   const ms = Math.floor((min + max) / 2)
   return new Promise(resolve => setTimeout(resolve, ms))
 }
-
+ 
 /**
  * Simulates a "not found" API error.
  */
@@ -92,7 +93,7 @@ class NotFoundError extends Error {
     this.name = 'NotFoundError'
   }
 }
-
+ 
 /**
  * Applies common list filters to an array of items.
  */
@@ -101,9 +102,9 @@ function applyFilters<T extends Record<string, unknown>>(
   filters?: Partial<ListFilters>
 ): T[] {
   if (!filters) return items
-
+ 
   let result = [...items]
-
+ 
   if (filters.customerId) {
     result = result.filter(item => item['customerId'] === filters.customerId)
   }
@@ -156,14 +157,14 @@ function applyFilters<T extends Record<string, unknown>>(
     const offset = filters.offset ?? 0
     result = result.slice(offset, offset + filters.limit)
   }
-
+ 
   return result
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Customer & Engagement
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Fetches a customer by ID.
  * @throws NotFoundError if the customer does not exist.
@@ -173,7 +174,7 @@ export async function getCustomer(id: string): Promise<Customer> {
   if (id !== MOCK_CUSTOMER.id) throw new NotFoundError('Customer', id)
   return { ...MOCK_CUSTOMER }
 }
-
+ 
 /**
  * Fetches an engagement by ID.
  * @throws NotFoundError if the engagement does not exist.
@@ -183,11 +184,11 @@ export async function getEngagement(id: string): Promise<Engagement> {
   if (id !== MOCK_ENGAGEMENT.id) throw new NotFoundError('Engagement', id)
   return { ...MOCK_ENGAGEMENT }
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sensors
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Lists all sensors, optionally filtered by customer ID.
  */
@@ -227,14 +228,14 @@ export async function getSensors(customerId?: string): Promise<Sensor[]> {
       ]
     }
   } catch (_e) {}
-
+ 
   await delay(50, 120)
   const sensors = customerId
     ? MOCK_SENSORS.filter(s => s.customerId === customerId)
     : MOCK_SENSORS
   return sensors.map(s => ({ ...s }))
 }
-
+ 
 export async function getSensor(id: string): Promise<Sensor> {
   const sensors = await getSensors()
   const found = sensors.find(s => s.id === id)
@@ -243,14 +244,14 @@ export async function getSensor(id: string): Promise<Sensor> {
   if (!sensor) throw new NotFoundError('Sensor', id)
   return { ...sensor }
 }
-
+ 
 export async function getSensorMetrics(id: string): Promise<SensorMetrics> {
   await delay(30, 80)
   const sensor = MOCK_SENSOR_MAP[id]
   if (!sensor) throw new NotFoundError('Sensor', id)
   return { ...sensor.metrics }
 }
-
+ 
 export async function getCaptures(filters?: Partial<ListFilters>): Promise<Capture[]> {
   try {
     const res = await fetch('http://localhost:8000/api/jobs', { cache: 'no-store' });
@@ -282,11 +283,11 @@ export async function getCaptures(filters?: Partial<ListFilters>): Promise<Captu
       }
     }
   } catch (_e) {}
-
+ 
   await delay(80, 160)
   return applyFilters(MOCK_CAPTURES as unknown as Record<string, unknown>[], filters) as unknown as Capture[]
 }
-
+ 
 /**
  * Fetches a single capture by ID.
  * @throws NotFoundError if the capture does not exist.
@@ -297,7 +298,7 @@ export async function getCapture(id: string): Promise<Capture> {
   if (!capture) throw new NotFoundError('Capture', id)
   return { ...capture }
 }
-
+ 
 /**
  * Lists segments for a given capture (for streaming / chunked download UI).
  */
@@ -305,11 +306,11 @@ export async function getCaptureSegments(captureId: string): Promise<CaptureSegm
   await delay(60, 120)
   return MOCK_CAPTURE_SEGMENTS.filter(s => s.captureId === captureId).map(s => ({ ...s }))
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Triggers
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Lists triggers with optional filtering.
  */
@@ -331,7 +332,7 @@ export async function getTriggers(filters?: Partial<ListFilters>): Promise<Trigg
   }
   return results.map(t => ({ ...t }))
 }
-
+ 
 /**
  * Fetches a single trigger by ID.
  * @throws NotFoundError if the trigger does not exist.
@@ -342,11 +343,11 @@ export async function getTrigger(id: string): Promise<Trigger> {
   if (!trigger) throw new NotFoundError('Trigger', id)
   return { ...trigger }
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Hosts
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Lists all hosts observed in a customer's captures.
  */
@@ -375,14 +376,14 @@ export async function getHosts(customerId?: string): Promise<Host[]> {
       }
     }
   } catch (_e) {}
-
+ 
   await delay(70, 140)
   const hosts = customerId
     ? MOCK_HOSTS.filter(h => h.customerId === customerId)
     : MOCK_HOSTS
   return hosts.map(h => ({ ...h }))
 }
-
+ 
 export async function getHost(id: string): Promise<Host> {
   const hosts = await getHosts()
   const found = hosts.find(h => h.id === id || h.ip === id)
@@ -391,7 +392,7 @@ export async function getHost(id: string): Promise<Host> {
   if (!host) throw new NotFoundError('Host', id)
   return { ...host }
 }
-
+ 
 export async function getDestinations(customerId?: string): Promise<Destination[]> {
   try {
     const res = await fetch('http://localhost:8000/api/entities', { cache: 'no-store' });
@@ -417,12 +418,12 @@ export async function getDestinations(customerId?: string): Promise<Destination[
       }
     }
   } catch (_e) {}
-
+ 
   await delay(70, 140)
   void customerId
   return MOCK_DESTINATIONS.map(d => ({ ...d }))
 }
-
+ 
 export async function getDestination(id: string): Promise<Destination> {
   const dests = await getDestinations()
   const found = dests.find(d => d.id === id || d.ip === id)
@@ -431,11 +432,11 @@ export async function getDestination(id: string): Promise<Destination> {
   if (!dest) throw new NotFoundError('Destination', id)
   return { ...dest }
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Network Services
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Lists all observed network services (open ports) for a customer.
  */
@@ -444,11 +445,11 @@ export async function getServices(customerId?: string): Promise<NetworkService[]
   void customerId
   return MOCK_NETWORK_SERVICES.map(s => ({ ...s }))
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Flows
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Lists flow records with optional filtering.
  * Returns flows sorted by timestamp ascending.
@@ -482,7 +483,7 @@ export async function getFlows(filters?: Partial<ListFilters & {
           sensorId: 'SNS-042',
           relatedFindings: []
         }));
-
+ 
         if ((filters as { minRiskScore?: number })?.minRiskScore !== undefined) {
           const minScore = (filters as { minRiskScore: number }).minRiskScore;
           mapped = mapped.filter(f => f.riskScore >= minScore);
@@ -493,10 +494,10 @@ export async function getFlows(filters?: Partial<ListFilters & {
   } catch (_e) {
     // Fallback to local mock if backend offline
   }
-
+ 
   await delay(50, 100)
   let results = [...MOCK_FLOWS]
-
+ 
   if (filters?.captureId) {
     results = results.filter(f => f.captureId === filters.captureId)
   }
@@ -510,10 +511,10 @@ export async function getFlows(filters?: Partial<ListFilters & {
     const minScore = (filters as { minRiskScore: number }).minRiskScore
     results = results.filter(f => f.riskScore >= minScore)
   }
-
+ 
   return results.map(f => ({ ...f }))
 }
-
+ 
 /**
  * Fetches a single flow by ID.
  * @throws NotFoundError if the flow does not exist.
@@ -524,11 +525,11 @@ export async function getFlow(id: string): Promise<Flow> {
   if (!flow) throw new NotFoundError('Flow', id)
   return { ...flow }
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Findings
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Lists findings with optional filtering.
  * Returns findings sorted by risk score descending.
@@ -567,17 +568,17 @@ export async function getFindings(filters?: Partial<ListFilters>): Promise<Findi
   } catch (_e) {
     // Fallback to local mock if backend offline
   }
-
+ 
   await delay(80, 160)
   let results = [...MOCK_FINDINGS]
-
+ 
   if (filters?.severity) {
     results = results.filter(f => f.severity === filters.severity)
   }
-
+ 
   return results.map(f => ({ ...f }))
 }
-
+ 
 export async function getFinding(id: string): Promise<Finding> {
   const findings = await getFindings()
   const found = findings.find(f => f.id === id)
@@ -587,11 +588,11 @@ export async function getFinding(id: string): Promise<Finding> {
   if (!finding) throw new NotFoundError('Finding', id)
   return { ...finding }
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Incidents
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Lists incidents with optional filtering.
  * Returns incidents sorted by risk score descending.
@@ -623,10 +624,10 @@ export async function getIncidents(filters?: Partial<ListFilters>): Promise<Inci
       }
     }
   } catch (_e) {}
-
+ 
   await delay(80, 150)
   let results = [...MOCK_INCIDENTS]
-
+ 
   if (filters?.status) {
     results = results.filter(i => i.status === filters.status)
   }
@@ -651,17 +652,17 @@ export async function getIncidents(filters?: Partial<ListFilters>): Promise<Inci
       i.id.toLowerCase().includes(q)
     )
   }
-
+ 
   results.sort((a, b) => b.riskScore - a.riskScore)
-
+ 
   if (filters?.limit !== undefined) {
     const offset = filters.offset ?? 0
     results = results.slice(offset, offset + filters.limit)
   }
-
+ 
   return results.map(i => ({ ...i }))
 }
-
+ 
 /**
  * Fetches a single incident by ID.
  * @throws NotFoundError if the incident does not exist.
@@ -672,11 +673,11 @@ export async function getIncident(id: string): Promise<Incident> {
   if (!incident) throw new NotFoundError('Incident', id)
   return { ...incident }
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Timeline
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Returns timeline events, optionally filtered.
  * Events are always returned in chronological order (ascending timestamp).
@@ -688,7 +689,7 @@ export async function getTimeline(filters?: Partial<ListFilters & {
 }>): Promise<TimelineEvent[]> {
   await delay(70, 130)
   let results = [...MOCK_TIMELINE_EVENTS]
-
+ 
   if ((filters as { type?: string })?.type) {
     results = results.filter(e => e.type === (filters as { type: string }).type)
   }
@@ -706,43 +707,43 @@ export async function getTimeline(filters?: Partial<ListFilters & {
     const toTs = new Date(filters.to).getTime()
     results = results.filter(e => new Date(e.timestamp).getTime() <= toTs)
   }
-
+ 
   results.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-
+ 
   if (filters?.limit !== undefined) {
     const offset = filters.offset ?? 0
     results = results.slice(offset, offset + filters.limit)
   }
-
+ 
   return results.map(e => ({ ...e }))
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Evidence
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Lists evidence items with optional filtering.
  */
 export async function getEvidence(filters?: Partial<ListFilters>): Promise<Evidence[]> {
   await delay(60, 120)
   let results = [...MOCK_EVIDENCE]
-
+ 
   if (filters?.captureId) {
     results = results.filter(e => e.captureId === filters.captureId)
   }
   if (filters?.findingId) {
     results = results.filter(e => e.findingId === filters.findingId)
   }
-
+ 
   if (filters?.limit !== undefined) {
     const offset = filters.offset ?? 0
     results = results.slice(offset, offset + filters.limit)
   }
-
+ 
   return results.map(e => ({ ...e }))
 }
-
+ 
 /**
  * Fetches a single evidence item by ID.
  * @throws NotFoundError if the evidence item does not exist.
@@ -753,37 +754,120 @@ export async function getEvidenceItem(id: string): Promise<Evidence> {
   if (!evidence) throw new NotFoundError('Evidence', id)
   return { ...evidence }
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Investigations
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
+/**
+ * Projects a backend job (GET /api/jobs) into the frontend's Investigation
+ * shape. The backend has no separate "investigation" concept — a job IS the
+ * investigation, and /api/analyze/pcap runs synchronously, so any job found
+ * here is already finished by the time this is called.
+ */
+function _projectJobAsInvestigation(job: any, hostCount: number): Investigation {
+  const s = job.summary || {}
+  const status: Investigation['status'] =
+    job.status === 'complete' ? 'completed' : job.status === 'failed' ? 'failed' : 'running'
+ 
+  return {
+    id: job.job_id,
+    captureId: s.capture?.capture_id || `CAP-${String(job.job_id).slice(0, 8)}`,
+    customerId: 'CUST-001',
+    engagementId: 'ENG-001',
+    status,
+    profile: 'standard',
+    stages: [
+      {
+        name: 'Analysis',
+        status: status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'running',
+        startTime: job.created_at,
+        endTime: status === 'completed' ? job.created_at : undefined,
+        itemsProcessed: s.total_flows || 0,
+        itemsTotal: s.total_flows || 0,
+        errors: [],
+      },
+    ],
+    findings: Array.isArray(s.recent_alerts) ? s.recent_alerts.map((a: any) => a.id).filter(Boolean) : [],
+    incidents: Array.isArray(s.top_incidents) ? s.top_incidents.map((i: any) => i.incident_id).filter(Boolean) : [],
+    createdAt: job.created_at,
+    completedAt: status === 'completed' ? job.created_at : undefined,
+    progress: {
+      flowsProcessed: s.total_flows || 0,
+      hostsIdentified: hostCount,
+      protocolsFound: s.protocols || 0,
+      findingsSoFar: s.suspicious_flows || 0,
+      errors: [],
+    },
+  }
+}
+ 
 /**
  * Lists all investigations, optionally filtered by customer.
+ * Tries the real backend's job history first — every analyzed capture is a
+ * job there — and only falls back to the mock demo list when the backend is
+ * unreachable or has no jobs yet.
  */
 export async function getInvestigations(customerId?: string): Promise<Investigation[]> {
+  try {
+    const res = await fetch('http://localhost:8000/api/jobs', { cache: 'no-store' })
+    if (res.ok) {
+      const jobs = await res.json()
+      if (Array.isArray(jobs) && jobs.length > 0) {
+        return jobs.map((job: any) => _projectJobAsInvestigation(job, 0))
+      }
+    }
+  } catch (_e) {
+    // Fallback to local mock if backend offline
+  }
+ 
   await delay(70, 140)
   const investigations = customerId
     ? MOCK_INVESTIGATIONS.filter(i => i.customerId === customerId)
     : MOCK_INVESTIGATIONS
   return investigations.map(i => ({ ...i }))
 }
-
+ 
 /**
  * Fetches a single investigation by ID.
- * @throws NotFoundError if the investigation does not exist.
+ *
+ * Real backend job ids (from uploadPcap()) are UUIDs that were never keys in
+ * MOCK_INVESTIGATION_MAP, so looking them up there always threw. This now
+ * checks the backend's job history first — the same hybrid pattern used by
+ * getHosts/getFlows/getFindings above — and only falls back to the mock map
+ * for the small set of hardcoded demo ids.
+ *
+ * @throws NotFoundError if the investigation exists in neither place.
  */
 export async function getInvestigation(id: string): Promise<Investigation> {
+  try {
+    const [jobsRes, entitiesRes] = await Promise.all([
+      fetch('http://localhost:8000/api/jobs', { cache: 'no-store' }),
+      fetch('http://localhost:8000/api/entities', { cache: 'no-store' }).catch(() => null),
+    ])
+    if (jobsRes.ok) {
+      const jobs = await jobsRes.json()
+      const job = Array.isArray(jobs) ? jobs.find((j: any) => j.job_id === id) : null
+      if (job) {
+        const entities = entitiesRes && entitiesRes.ok ? await entitiesRes.json() : []
+        const hostCount = Array.isArray(entities) ? entities.length : 0
+        return _projectJobAsInvestigation(job, hostCount)
+      }
+    }
+  } catch (_e) {
+    // Fallback to local mock if backend offline or job not found there
+  }
+ 
   await delay(60, 120)
   const investigation = MOCK_INVESTIGATION_MAP[id]
   if (!investigation) throw new NotFoundError('Investigation', id)
   return { ...investigation }
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reports
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Lists all reports for a customer.
  */
@@ -794,7 +878,7 @@ export async function getReports(customerId?: string): Promise<Report[]> {
     : MOCK_REPORTS
   return reports.map(r => ({ ...r }))
 }
-
+ 
 /**
  * Fetches a single report by ID.
  * @throws NotFoundError if the report does not exist.
@@ -805,11 +889,11 @@ export async function getReport(id: string): Promise<Report> {
   if (!report) throw new NotFoundError('Report', id)
   return { ...report }
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // System Health
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Returns the current system health status.
  */
@@ -855,15 +939,15 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   } catch (_e) {
     // Fallback if backend offline
   }
-
+ 
   await delay(30, 80)
   return { ...MOCK_SYSTEM_HEALTH }
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Notifications
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Returns all in-app notifications for the current consultant.
  */
@@ -871,7 +955,7 @@ export async function getNotifications(): Promise<AppNotification[]> {
   await delay(30, 80)
   return MOCK_NOTIFICATIONS.map(n => ({ ...n }))
 }
-
+ 
 /**
  * Marks a notification as read.
  */
@@ -880,7 +964,7 @@ export async function markNotificationRead(id: string): Promise<void> {
   const notif = MOCK_NOTIFICATIONS.find(n => n.id === id)
   if (notif) notif.read = true
 }
-
+ 
 /**
  * Marks all notifications as read.
  */
@@ -888,11 +972,11 @@ export async function markAllNotificationsRead(): Promise<void> {
   await delay(30, 80)
   MOCK_NOTIFICATIONS.forEach(n => { n.read = true })
 }
-
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // Global Search
 // ─────────────────────────────────────────────────────────────────────────────
-
+ 
 /**
  * Searches across all entity types and returns ranked results.
  *
@@ -901,12 +985,12 @@ export async function markAllNotificationsRead(): Promise<void> {
  */
 export async function searchAll(query: string): Promise<SearchResult[]> {
   await delay(80, 180)
-
+ 
   if (!query || query.trim().length < 2) return []
   const q = query.trim().toLowerCase()
-
+ 
   const results: SearchResult[] = []
-
+ 
   // Hosts
   for (const host of MOCK_HOSTS) {
     const score = (host.hostname?.toLowerCase().includes(q) ? 3 : 0) +
@@ -924,7 +1008,7 @@ export async function searchAll(query: string): Promise<SearchResult[]> {
       })
     }
   }
-
+ 
   // Destinations
   for (const dest of MOCK_DESTINATIONS) {
     const score = (dest.domain?.toLowerCase().includes(q) ? 3 : 0) +
@@ -942,7 +1026,7 @@ export async function searchAll(query: string): Promise<SearchResult[]> {
       })
     }
   }
-
+ 
   // Findings
   for (const finding of MOCK_FINDINGS) {
     const score = (finding.title.toLowerCase().includes(q) ? 3 : 0) +
@@ -962,7 +1046,7 @@ export async function searchAll(query: string): Promise<SearchResult[]> {
       })
     }
   }
-
+ 
   // Incidents
   for (const incident of MOCK_INCIDENTS) {
     const score = (incident.title.toLowerCase().includes(q) ? 3 : 0) +
@@ -980,7 +1064,7 @@ export async function searchAll(query: string): Promise<SearchResult[]> {
       })
     }
   }
-
+ 
   // Captures
   for (const capture of MOCK_CAPTURES) {
     const score = (capture.id.toLowerCase().includes(q) ? 2 : 0) +
@@ -999,7 +1083,7 @@ export async function searchAll(query: string): Promise<SearchResult[]> {
       })
     }
   }
-
+ 
   // Sensors
   for (const sensor of MOCK_SENSORS) {
     const score = (sensor.name.toLowerCase().includes(q) ? 3 : 0) +
@@ -1017,7 +1101,7 @@ export async function searchAll(query: string): Promise<SearchResult[]> {
       })
     }
   }
-
+ 
   // Triggers
   for (const trigger of MOCK_TRIGGERS) {
     const score = (trigger.id.toLowerCase().includes(q) ? 2 : 0) +
@@ -1037,7 +1121,7 @@ export async function searchAll(query: string): Promise<SearchResult[]> {
       })
     }
   }
-
+ 
   // Sort by score descending, then by timestamp descending
   results.sort((a, b) => {
     const scoreDiff = (b.score ?? 0) - (a.score ?? 0)
@@ -1046,6 +1130,7 @@ export async function searchAll(query: string): Promise<SearchResult[]> {
     const tsB = b.timestamp ? new Date(b.timestamp).getTime() : 0
     return tsB - tsA
   })
-
+ 
   return results.slice(0, 20) // return top 20
 }
+ 

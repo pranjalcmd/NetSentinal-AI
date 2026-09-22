@@ -73,11 +73,41 @@ app.add_middleware(
 
 @app.on_event("startup")
 def _startup_init() -> None:
-    """Initialize store on startup. Clean state by default."""
+    """Bring back the last analysed capture, if the database has one.
+
+    Every capture is already persisted by _job() -> db.save_job(), and
+    db.load_job() already knows how to restore one into the live store —
+    this just wires the two together on boot instead of leaving store.reset()
+    as the last word, which silently discarded everything on every restart
+    even though it was still sitting in the database.
+    """
     try:
         db.init()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        print(f"[db] init failed, starting with an empty store: {exc}")
+        store.reset()
+        return
+
+    try:
+        jobs = db.list_jobs()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[db] could not read job history, starting with an empty store: {exc}")
+        store.reset()
+        return
+
+    if not jobs:
+        store.reset()
+        return
+
+    latest = jobs[0]["job_id"]  # list_jobs() orders newest first
+    try:
+        if db.load_job(latest, store):
+            store.current_job_id = latest
+            print(f"[startup] restored capture {latest!r} from the database")
+            return
+    except Exception as exc:  # noqa: BLE001
+        print(f"[db] could not restore capture {latest!r}, starting with an empty store: {exc}")
+
     store.reset()
 
 
@@ -198,14 +228,92 @@ def alert_detail(alert_id: str):
 # FINDINGS / INCIDENTS — the detection record the alerts summarise
 # ============================================================
 
+_FINDING_SEVERITY_MAP = {
+    "CRITICAL": "critical", "HIGH": "high", "MEDIUM": "medium", "LOW": "low", "INFO": "info",
+}
+
+
+# This backend is a single processing pipeline, not a fleet of physical
+# sensors — there is no per-finding sensor identity to look up. Rather than
+# invent one, this names the one pipeline that exists: the same
+# "PRISM-INGEST-01" id /api/sensors, /api/captures and the incidents grouping
+# below all already use for it.
+_PIPELINE_SENSOR_ID = "PRISM-INGEST-01"
+
+
+def _project_finding(f: dict) -> dict:
+    """store.findings record (real detection.schemas.Finding output) ->
+    the flat BackendFinding contract the unmodified frontend expects.
+
+    source_ip/destination_ip aren't on Finding itself, so they're read off
+    the first related flow, same as everything else that needs host context.
+    """
+    flow_id = (f.get("related_flows") or [None])[0]
+    flow = store.flows.get(flow_id, {}) if flow_id else {}
+    title = f.get("summary") or "Network Anomaly"
+    # observed_facts is the detection engine's actual evidence list for this
+    # finding — real, per-finding content, unlike reusing the one-line title
+    # as the description too.
+    facts = f.get("observed_facts") or []
+    description = " ".join(str(fact) for fact in facts) if facts else title
+    return {
+        "id": f.get("finding_id"),
+        "title": title,
+        "description": description,
+        "severity": _FINDING_SEVERITY_MAP.get(str(f.get("severity", "HIGH")).upper(), "high"),
+        "status": str(f.get("status", "NEW")).lower(),
+        "category": f.get("category") or "network_anomaly",
+        "risk_score": f.get("risk", 0),
+        "confidence": f.get("confidence", 0),
+        "source_ip": flow.get("source_ip"),
+        "destination_ip": flow.get("destination_ip"),
+        "flow_id": flow_id,
+        "flow_ids": f.get("related_flows", []),
+        "first_seen": f.get("first_seen") or f.get("created_at"),
+        "last_seen": f.get("last_seen") or f.get("updated_at"),
+        # capture_id/f.get() is real (set by analyse_flows from the actual
+        # upload) — "demo" only fires for /api/demo/load's built-in dataset,
+        # which genuinely is the demo capture.
+        "capture_id": f.get("capture_id") or "demo",
+        "sensor_id": _PIPELINE_SENSOR_ID,
+    }
+
+
 @app.get("/api/findings")
 def findings():
-    return sorted(store.findings.values(), key=lambda f: f.get("risk", 0), reverse=True)
+    ranked = sorted(store.findings.values(), key=lambda f: f.get("risk", 0), reverse=True)
+    return [_project_finding(f) for f in ranked]
+
+
+def _project_incident(i: dict) -> dict:
+    """store.incidents record (real detection.schemas.Incident output) ->
+    the flat BackendIncident contract the frontend expects — same reasoning
+    as _project_finding above.
+    """
+    finding_ids = i.get("finding_ids", [])
+    narrative_lines = i.get("narrative") or []
+    description = " ".join(str(line) for line in narrative_lines) or f"{len(finding_ids)} correlated findings."
+    return {
+        "id": i.get("incident_id"),
+        "title": i.get("title") or "Correlated Network Incident",
+        "description": description,
+        "status": str(i.get("status", "NEW")).lower(),
+        "risk_score": i.get("risk", 0),
+        "confidence": i.get("confidence", 0),
+        "source_ips": [i["primary_host"]] if i.get("primary_host") else [],
+        "finding_ids": finding_ids,
+        "capture_id": (i.get("capture_ids") or [None])[0] or "demo",
+        "sensor_ids": i.get("sensor_ids") or [_PIPELINE_SENSOR_ID],
+        "first_seen": i.get("started_at"),
+        "last_seen": i.get("last_activity_at"),
+        "alert_count": len(finding_ids),
+    }
 
 
 @app.get("/api/incidents")
 def incidents():
-    return sorted(store.incidents.values(), key=lambda i: i.get("risk", 0), reverse=True)
+    ranked = sorted(store.incidents.values(), key=lambda i: i.get("risk", 0), reverse=True)
+    return [_project_incident(i) for i in ranked]
 
 
 @app.get("/api/incidents/{incident_id}")
@@ -214,9 +322,17 @@ def incident_detail(incident_id: str):
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
     return {
-        "incident": incident,
-        "findings": [store.findings[f] for f in incident.get("finding_ids", [])
+        **_project_incident(incident),
+        "findings": [_project_finding(store.findings[f]) for f in incident.get("finding_ids", [])
                      if f in store.findings],
+        # The real correlation reasoning — not on the flat BackendIncident
+        # contract (other callers of the list route don't need it), but the
+        # detail page does, same as flow/ai_explanation on a finding's detail.
+        "narrative": incident.get("narrative", []),
+        "root_hypothesis": incident.get("root_hypothesis", ""),
+        "impact_assessment": incident.get("impact_assessment", ""),
+        "recommendations": incident.get("recommendations", []),
+        "readiness": incident.get("readiness", "LIMITED"),
     }
 
 
@@ -436,24 +552,11 @@ def load_job(job_id: str):
     return {"job_id": job_id, "loaded": True, "summary": summary()}
 
 
-@app.post("/api/agent/ingest", tags=["ingestion"])
-async def agent_ingest(payload: dict):
-    """Live-agent batch flow ingestion endpoint (PRD Section 8)."""
-    raw_flows = payload.get("flows")
-    if raw_flows is None and isinstance(payload, list):
-        raw_flows = payload
-    if not raw_flows or not isinstance(raw_flows, list):
-        raise HTTPException(status_code=400, detail="Provide a 'flows' list in payload")
-    
-    res = analyse_flows(raw_flows)
-    return {
-        "status": "ok",
-        "ingested": len(raw_flows),
-        "total_flows": len(store.flows),
-        "total_alerts": len(store.alerts),
-        "summary": res
-    }
-
+# A second "/api/agent/ingest" (dict payload, tags=["ingestion"]) used to be
+# declared here — same path and method as the real one above, so it was
+# never actually reachable, and it also skipped the API-key check and
+# store.current_job_id bookkeeping the real one does. Removed rather than
+# fixed, same as the other duplicate routes in this file.
 
 
 # ============================================================
@@ -531,7 +634,7 @@ def get_capture(capture_id: str):
             "flow_list": list(store.flows.values())[:50],
             "alert_list": list(store.alerts.values())[:20],
         }
-    job = job_runner.get_job(capture_id) or store.jobs.get(capture_id)
+    job = store.jobs.get(capture_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Capture {capture_id!r} not found")
     return {
@@ -543,100 +646,43 @@ def get_capture(capture_id: str):
 
 
 # ============================================================
-# FINDINGS (Alerts projected as Findings — PRD Section 4)
+# FINDINGS (detail) — PRD Section 4
 # ============================================================
-
-@app.get("/api/findings", tags=["findings"])
-def list_findings():
-    """Return alerts projected as investigation findings."""
-    severity_map = {
-        "CRITICAL": "critical", "HIGH": "high", "MEDIUM": "medium", "LOW": "low", "INFO": "info",
-    }
-    findings = []
-    for a in sorted(store.alerts.values(), key=lambda x: x.get("risk_score", 0), reverse=True):
-        findings.append({
-            "id": a.get("id", f"FND-{uuid4().hex[:6]}"),
-            "title": a.get("title") or a.get("rule_name") or "Correlated Network Anomaly",
-            "description": "; ".join(a.get("evidence", [])) or "Anomalous traffic detected by the detection engine.",
-            "severity": severity_map.get(str(a.get("severity", "HIGH")).upper(), "high"),
-            "status": "open",
-            "category": a.get("category") or "network_anomaly",
-            "risk_score": a.get("risk_score", 50),
-            "confidence": min(100, int(a.get("risk_score", 50) * 0.95)),
-            "source_ip": a.get("source_ip"),
-            "destination_ip": a.get("destination_ip"),
-            "flow_id": a.get("flow_id"),
-            "flow_ids": [a["flow_id"]] if a.get("flow_id") else [],
-            "first_seen": a.get("timestamp", datetime.now(timezone.utc).isoformat()),
-            "last_seen": a.get("timestamp", datetime.now(timezone.utc).isoformat()),
-            "capture_id": "demo",
-            "sensor_id": "PRISM-INGEST-01",
-        })
-    return findings
+# The list route lives above, next to INCIDENTS, and already reads
+# store.findings (the real detection-engine record). A second
+# "/api/findings" used to be declared here too, reading store.alerts — a
+# different collection with a different id namespace — instead. FastAPI/
+# Starlette matches routes in registration order, so that copy was already
+# dead code (shadowed by the one above); it's been removed rather than
+# fixed. This detail route had the same store.alerts mismatch — a finding_id
+# from the list above was never going to be present in store.alerts — so
+# every /api/findings/{id} call 404'd. Fixed to read store.findings instead.
 
 
 @app.get("/api/findings/{finding_id}", tags=["findings"])
 def get_finding(finding_id: str):
-    """Get a single finding (alert) by ID."""
-    alert = store.alerts.get(finding_id)
-    if not alert:
+    """Get a single finding by ID."""
+    finding = store.findings.get(finding_id)
+    if not finding:
         raise HTTPException(status_code=404, detail=f"Finding {finding_id!r} not found")
+    projected = _project_finding(finding)
     return {
-        **alert,
-        "id": alert.get("id"),
-        "title": alert.get("title") or "Network Anomaly",
-        "severity": str(alert.get("severity", "HIGH")).lower(),
-        "risk_score": alert.get("risk_score", 50),
-        "flow": store.flows.get(alert.get("flow_id", "")),
+        **projected,
+        "flow": store.flows.get(projected["flow_id"], {}),
         "ai_explanation": store.ai.get(finding_id),
     }
 
 
 # ============================================================
-# INCIDENTS (Correlated Alert Groups — PRD Section 4)
+# INCIDENTS (detail) — PRD Section 4
 # ============================================================
-
-@app.get("/api/incidents", tags=["incidents"])
-def list_incidents():
-    """Group alerts into incidents by source IP."""
-    from collections import defaultdict
-    groups: dict[str, list] = defaultdict(list)
-    for a in store.alerts.values():
-        key = a.get("source_ip", "unknown")
-        groups[key].append(a)
-
-    incidents = []
-    for idx, (src_ip, group_alerts) in enumerate(
-        sorted(groups.items(), key=lambda x: max(a.get("risk_score", 0) for a in x[1]), reverse=True)
-    ):
-        top_alert = max(group_alerts, key=lambda a: a.get("risk_score", 0))
-        incidents.append({
-            "id": f"INC-{2000 + idx:04d}",
-            "title": top_alert.get("title") or f"Incident cluster from {src_ip}",
-            "description": f"{len(group_alerts)} correlated alerts from {src_ip}. Highest risk: {top_alert.get('title', 'Network Anomaly')}.",
-            "status": "investigating",
-            "risk_score": max(a.get("risk_score", 0) for a in group_alerts),
-            "confidence": 82,
-            "source_ips": [src_ip],
-            "finding_ids": [a.get("id") for a in group_alerts if a.get("id")],
-            "capture_id": "demo",
-            "sensor_ids": ["PRISM-INGEST-01"],
-            "first_seen": min(a.get("timestamp", datetime.now(timezone.utc).isoformat()) for a in group_alerts),
-            "last_seen": max(a.get("timestamp", datetime.now(timezone.utc).isoformat()) for a in group_alerts),
-            "alert_count": len(group_alerts),
-        })
-    return incidents
-
-
-@app.get("/api/incidents/{incident_id}", tags=["incidents"])
-def get_incident(incident_id: str):
-    """Get a single incident with its related findings."""
-    incidents = list_incidents()
-    inc = next((i for i in incidents if i["id"] == incident_id), None)
-    if not inc:
-        raise HTTPException(status_code=404, detail=f"Incident {incident_id!r} not found")
-    inc["findings"] = [store.alerts.get(fid) for fid in inc.get("finding_ids", []) if store.alerts.get(fid)]
-    return inc
+# The list route lives above, next to FINDINGS, and already reads the real
+# store.incidents record via _project_incident. A second "/api/incidents"
+# used to be declared here too — same registration-order shadowing bug as
+# the original /api/findings duplicate — deriving fake incidents by grouping
+# alerts by source_ip instead of using the real detection-engine incidents.
+# It (and its matching /api/incidents/{incident_id}) were dead code, never
+# actually served, so they've been removed rather than fixed.
 
 
 # ============================================================
@@ -789,4 +835,3 @@ def system_health_full():
             },
         ],
     }
-

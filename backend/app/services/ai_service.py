@@ -578,6 +578,12 @@ def _mock_explain(alert: dict) -> dict:
 
 
 def _mock_ask(question: str, summary: dict, top: list[dict]) -> dict:
+    """No-key fallback. Keyword-routes over the loaded alerts so the answer
+    actually changes with the question — it is still template text, not a
+    model, and every response is tagged provider: "mock" so the UI can say
+    so. A real AI_API_KEY is what makes this actually read and reason about
+    the question; this only keeps the no-key demo from looking frozen.
+    """
     if not top:
         return {
             "answer": (
@@ -588,6 +594,60 @@ def _mock_ask(question: str, summary: dict, top: list[dict]) -> dict:
             "evidence": [f"{summary.get('total_flows', 0)} flows in the store"],
         }
 
+    q = question.lower()
+
+    # "how many" / "count" — the counts themselves, not one alert's story.
+    if any(kw in q for kw in ("how many", "count", "total")):
+        answer = (
+            f"{summary.get('total_flows', 0)} flows were analysed. "
+            f"{summary.get('suspicious_flows', 0)} raised an alert, "
+            f"{summary.get('high_risk', 0)} of those are high or critical severity, "
+            f"and {summary.get('incidents', 0)} were correlated into incidents."
+        )
+        evidence = [f"{a.get('flow_id')}: {a.get('title')} — risk {a.get('risk_score')}" for a in top[:5]]
+        return {"answer": answer, "evidence": evidence}
+
+    # A specific IP mentioned — alerts touching it, not the global top alert.
+    ip_match = re.search(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", question)
+    if ip_match:
+        ip = ip_match.group(0)
+        matches = [a for a in top if ip in (a.get("entity") or "") or ip in str(a.get("evidence", ""))]
+        if matches:
+            hit = matches[0]
+            answer = (
+                f"{ip} appears in {len(matches)} of the top {len(top)} alerts. The highest-risk "
+                f"one is {hit.get('title')} on flow {hit.get('flow_id')} "
+                f"(risk {hit.get('risk_score')}, {hit.get('severity')})."
+            )
+            evidence = [f"{a.get('flow_id')}: {a.get('title')} — risk {a.get('risk_score')}" for a in matches[:5]]
+            return {"answer": answer, "evidence": evidence}
+        return {
+            "answer": f"{ip} does not appear in the top {len(top)} alerts by risk score for this capture.",
+            "evidence": [f"{summary.get('total_flows', 0)} flows in the store"],
+        }
+
+    # A category keyword (beaconing, exfiltration, c2, dns, ...) — alerts
+    # whose title actually mentions it, not just the single worst overall.
+    category_terms = ("beacon", "c2", "command", "exfil", "dns", "tunnel", "scan", "brute", "malware", "lateral")
+    hit_term = next((t for t in category_terms if t in q), None)
+    if hit_term:
+        matches = [a for a in top if hit_term in str(a.get("title", "")).lower()]
+        if matches:
+            worst = matches[0]
+            answer = (
+                f"{len(matches)} of the top {len(top)} alerts relate to {hit_term}. The strongest is "
+                f"{worst.get('title')} on flow {worst.get('flow_id')} from {worst.get('entity')} "
+                f"(risk {worst.get('risk_score')}, {worst.get('severity')})."
+            )
+            evidence = [f"{a.get('flow_id')}: {a.get('title')} — risk {a.get('risk_score')}" for a in matches[:5]]
+            return {"answer": answer, "evidence": evidence}
+        return {
+            "answer": f"None of the top {len(top)} alerts by risk score are categorised as {hit_term}.",
+            "evidence": [f"{summary.get('total_flows', 0)} flows in the store"],
+        }
+
+    # No keyword matched — fall back to the single strongest signal, same as
+    # before, but only as the last resort rather than the only behaviour.
     worst = top[0]
     answer = (
         f"Across {summary.get('total_flows', 0)} analysed flows, "

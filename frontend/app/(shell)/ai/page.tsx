@@ -5,17 +5,30 @@ import { askAI, generateReport, getAlerts, CanonicalAlert } from '@/lib/api';
 import { Sparkles, Send, FileText, Bot, ShieldAlert, RefreshCw, Check } from 'lucide-react';
 
 export default function AIAssistantPage() {
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; evidence?: any[] }>>([
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; evidence?: any[]; timestamp: string }>>([
     {
       role: 'assistant',
       content: 'PRISM Security Advisory Assistant online. Connected to FastAPI pipeline. Ask any question about network anomalies, C2 beaconing, or request an explainable incident report.',
+      // Left empty on purpose: new Date() here would run once during SSR and
+      // again during client hydration a moment later, producing two
+      // different strings and triggering a hydration mismatch. Filled in by
+      // the mount effect below, client-side only, after hydration completes.
+      timestamp: '',
     }
   ]);
+  const [mounted, setMounted] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportGenerated, setReportGenerated] = useState<any>(null);
   const [alerts, setAlerts] = useState<CanonicalAlert[]>([]);
+
+  useEffect(() => {
+    setMounted(true);
+    setMessages((prev) =>
+      prev.map((m, i) => (i === 0 && !m.timestamp ? { ...m, timestamp: new Date().toLocaleTimeString() } : m))
+    );
+  }, []);
 
   useEffect(() => {
     getAlerts().then(setAlerts).catch(() => {});
@@ -25,7 +38,7 @@ export default function AIAssistantPage() {
     if (!input.trim() || loading) return;
     const userMsg = input.trim();
     setInput('');
-    setMessages((prev) => [...prev, { role: 'user', content: userMsg }]);
+    setMessages((prev) => [...prev, { role: 'user', content: userMsg, timestamp: new Date().toLocaleTimeString() }]);
     setLoading(true);
 
     try {
@@ -36,6 +49,7 @@ export default function AIAssistantPage() {
           role: 'assistant',
           content: res.answer,
           evidence: res.evidence_used,
+          timestamp: new Date().toLocaleTimeString(),
         }
       ]);
     } catch (err: any) {
@@ -44,6 +58,7 @@ export default function AIAssistantPage() {
         {
           role: 'assistant',
           content: `AI Analysis Error: ${err.message || 'Failed to reach AI service'}.`,
+          timestamp: new Date().toLocaleTimeString(),
         }
       ]);
     } finally {
@@ -61,6 +76,7 @@ export default function AIAssistantPage() {
         {
           role: 'assistant',
           content: `📄 Executive Report Generated: "${res.title || 'PRISM Executive Report'}". Summary: ${res.summary || res.executive_summary || 'Full SOC incident analysis synthesized.'}`,
+          timestamp: new Date().toLocaleTimeString(),
         }
       ]);
     } catch (err: any) {
@@ -117,7 +133,7 @@ export default function AIAssistantPage() {
                 <span className="flex items-center gap-1.5 font-bold">
                   {m.role === 'user' ? 'ANALYST QUERY' : <><Bot className="w-3.5 h-3.5 text-[#3DD9C4]" /> AI EXPLANATION ENGINE</>}
                 </span>
-                <span>{new Date().toLocaleTimeString()}</span>
+                <span>{m.timestamp}</span>
               </div>
               <div className="whitespace-pre-wrap font-sans text-sm">{m.content}</div>
 

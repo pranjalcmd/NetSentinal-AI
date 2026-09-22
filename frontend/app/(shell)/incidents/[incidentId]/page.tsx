@@ -21,18 +21,33 @@ import {
   ChevronRight,
   Zap,
 } from 'lucide-react';
-import { getIncident, getHosts, getFindings } from '@/lib/mock/services';
-import type { Incident, Host, Finding, StoryStep } from '@/lib/types';
-import { RiskBadge, ConfidenceBadge, StatusBadge, SeverityBadge } from '@/components/ui/Badge';
+import { getIncidentDetail, type BackendIncident, type BackendFinding } from '@/lib/api';
+import { getHosts } from '@/lib/mock/services';
+import type { Host } from '@/lib/types';
+import { RiskBadge, ConfidenceBadge, StatusBadge } from '@/components/ui/Badge';
+
+// The real /api/incidents/{id} response is a BackendIncident plus a few
+// detail-only fields the list route doesn't send (findings, and the
+// detection engine's actual correlation reasoning).
+interface IncidentDetail extends BackendIncident {
+  findings: BackendFinding[];
+  narrative: string[];
+  root_hypothesis: string;
+  impact_assessment: string;
+  recommendations: string[];
+  readiness: string;
+}
 
 export default function IncidentDetailPage({ params }: { params?: Promise<{ incidentId: string }> | { incidentId: string } }) {
   const [incidentId, setIncidentId] = useState<string>('');
-  const [incident, setIncident] = useState<Incident | null>(null);
+  const [incident, setIncident] = useState<IncidentDetail | null>(null);
   const [hosts, setHosts] = useState<Host[]>([]);
-  const [findings, setFindings] = useState<Finding[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Status & Analyst Notes state
+  // Local-only UI state — this backend has no PATCH /api/incidents/{id} and
+  // no notes storage, so these never leave the browser (same as the report
+  // draft page). They're not pretending to be synced anywhere.
   const [currentStatus, setCurrentStatus] = useState<string>('investigating');
   const [analystNotes, setAnalystNotes] = useState<string>('');
   const [exportMessage, setExportMessage] = useState<string | null>(null);
@@ -51,23 +66,25 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
   useEffect(() => {
     if (!incidentId) return;
 
+    const notesKey = `prism-incident-notes:${incidentId}`;
+
     const fetchData = async () => {
       setLoading(true);
+      setLoadError(null);
       try {
-        const [incData, hData, fData] = await Promise.all([
-          getIncident(incidentId),
-          getHosts(),
-          getFindings({ incidentId }),
-        ]);
+        const incData = (await getIncidentDetail(incidentId)) as IncidentDetail;
         setIncident(incData);
         setCurrentStatus(incData.status);
-        if (incData.analystNotes) setAnalystNotes(incData.analystNotes);
 
-        const filteredHosts = hData.filter(h => incData.hostIds.includes(h.id));
-        setHosts(filteredHosts);
-        setFindings(fData);
+        try {
+          const savedNotes = localStorage.getItem(notesKey);
+          if (savedNotes) setAnalystNotes(savedNotes);
+        } catch (_e) {}
+
+        const allHosts = await getHosts();
+        setHosts(allHosts.filter(h => incData.source_ips.includes(h.ip) || incData.source_ips.includes(h.id)));
       } catch (err) {
-        console.error(`Error loading incident ${incidentId}:`, err);
+        setLoadError(err instanceof Error ? err.message : `Incident ${incidentId} could not be loaded`);
       } finally {
         setLoading(false);
       }
@@ -78,19 +95,19 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
 
   const handleStatusChange = (newStatus: string) => {
     setCurrentStatus(newStatus);
-    if (incident) {
-      setIncident({ ...incident, status: newStatus as any });
-    }
+    if (incident) setIncident({ ...incident, status: newStatus });
   };
 
   const handleSaveNotes = () => {
+    try {
+      localStorage.setItem(`prism-incident-notes:${incidentId}`, analystNotes);
+    } catch (_e) {}
     setNotesSavedToast(true);
     setTimeout(() => setNotesSavedToast(false), 3000);
   };
 
   const handleExportReport = () => {
-    setExportMessage(`Report exported for incident ${incidentId}. PDF summary downloaded.`);
-    setTimeout(() => setExportMessage(null), 4000);
+    window.print();
   };
 
   if (loading) {
@@ -102,12 +119,12 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
     );
   }
 
-  if (!incident) {
+  if (loadError || !incident) {
     return (
       <div className="p-12 text-center space-y-4 min-h-screen">
         <AlertTriangle className="w-10 h-10 text-yellow-500 mx-auto" />
         <h2 className="text-xl font-bold text-white">Incident Not Found</h2>
-        <p className="text-sm text-slate-400">Incident ID {incidentId} could not be loaded.</p>
+        <p className="text-sm text-slate-400">{loadError || `Incident ID ${incidentId} could not be loaded.`}</p>
         <Link
           href="/incidents"
           className="inline-flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-lg bg-slate-800 text-cyan-400 border border-slate-700"
@@ -118,24 +135,12 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
     );
   }
 
-  const storySteps: StoryStep[] = incident.story ?? [];
-
-  const getStoryIcon = (type: string) => {
-    switch (type) {
-      case 'discovery': return <Radio className="w-4 h-4 text-yellow-400" />;
-      case 'c2': return <ShieldAlert className="w-4 h-4 text-red-400" />;
-      case 'exfiltration': return <Zap className="w-4 h-4 text-orange-400" />;
-      case 'response': return <CheckCircle2 className="w-4 h-4 text-emerald-400" />;
-      case 'alert': return <Bot className="w-4 h-4 text-cyan-400" />;
-      default: return <Clock className="w-4 h-4 text-slate-400" />;
-    }
-  };
+  const hasSynthesis = incident.root_hypothesis || incident.impact_assessment || incident.recommendations.length > 0;
 
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto min-h-screen text-slate-100">
-      {/* Toast notifications */}
       {exportMessage && (
-        <div className="p-3 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-medium flex items-center justify-between animate-fade-in">
+        <div className="p-3 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-medium flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-cyan-400" />
             <span>{exportMessage}</span>
@@ -144,7 +149,6 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
         </div>
       )}
 
-      {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
           <div className="flex items-center gap-2 text-xs text-slate-400 mb-2">
@@ -172,12 +176,11 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
         </div>
       </div>
 
-      {/* Incident Status & Metadata Header */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Incident Risk</span>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold font-mono text-red-400">{incident.riskScore}</span>
+            <span className="text-3xl font-bold font-mono text-red-400">{incident.risk_score}</span>
             <span className="text-xs text-slate-500">/ 100</span>
           </div>
           <div className="text-[11px] text-red-400/80 mt-1 font-mono">Critical Security Priority</div>
@@ -185,11 +188,9 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
 
         <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Correlation Confidence</span>
-          <div className="text-3xl font-bold font-mono text-teal-300">
-            {Math.round(incident.confidence * 100)}%
-          </div>
+          <div className="text-3xl font-bold font-mono text-teal-300">{incident.confidence}%</div>
           <div className="mt-1">
-            <ConfidenceBadge confidence={Math.round(incident.confidence * 100)} size="sm" />
+            <ConfidenceBadge confidence={incident.confidence} size="sm" />
           </div>
         </div>
 
@@ -201,29 +202,25 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
-          <span className="text-xs font-medium text-slate-400 block mb-1">Assigned Consultant</span>
-          <div className="text-sm font-bold text-white mt-1 flex items-center gap-1.5">
-            <User className="w-4 h-4 text-cyan-400" />
-            Alex Morgan
-          </div>
-          <div className="text-[11px] text-slate-400">Lead IR Investigator</div>
+          <span className="text-xs font-medium text-slate-400 block mb-1">Readiness</span>
+          <div className="text-sm font-bold text-white mt-1">{incident.readiness}</div>
+          <div className="text-[11px] text-slate-400">Evidence sufficiency</div>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Affected Hosts</span>
-          <div className="text-2xl font-bold font-mono text-white mt-1">{incident.hostIds.length} Hosts</div>
-          <div className="text-[11px] text-slate-400 font-mono">FIN-WS-014, DEV-WS-028</div>
+          <div className="text-2xl font-bold font-mono text-white mt-1">{incident.source_ips.length} Hosts</div>
+          <div className="text-[11px] text-slate-400 font-mono">{incident.source_ips.join(', ') || '—'}</div>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
           <span className="text-xs font-medium text-slate-400 block mb-1">Total Correlated Findings</span>
-          <div className="text-2xl font-bold font-mono text-orange-400 mt-1">{incident.findingIds.length} Detections</div>
+          <div className="text-2xl font-bold font-mono text-orange-400 mt-1">{incident.finding_ids.length} Detections</div>
           <div className="text-[11px] text-slate-400">Cross-sensor correlated</div>
         </div>
       </div>
 
-      {/* AI Incident Synthesis Card */}
-      {incident.aiSummary && (
+      {hasSynthesis && (
         <div className="p-6 rounded-xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-cyan-500/30 shadow-2xl space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <div className="flex items-center gap-3">
@@ -231,71 +228,92 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
                 <Bot className="w-6 h-6" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-white">AI Incident Executive Synthesis</h2>
-                <p className="text-xs text-slate-400 font-mono">Automated correlation & attack reconstruction</p>
+                <h2 className="text-lg font-bold text-white">Detection Engine Synthesis</h2>
+                <p className="text-xs text-slate-400 font-mono">Root cause, impact, and recommended response</p>
               </div>
             </div>
-            <button
-              onClick={handleExportReport}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 transition-colors"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              Export Briefing
-            </button>
           </div>
-          <p className="text-sm text-slate-200 leading-relaxed font-sans bg-slate-950/70 p-4 rounded-lg border border-slate-800/80">
-            {incident.aiSummary}
-          </p>
+
+          {incident.root_hypothesis && (
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase mb-1">Root Hypothesis</h4>
+              <p className="text-sm text-slate-200 leading-relaxed bg-slate-950/70 p-4 rounded-lg border border-slate-800/80">
+                {incident.root_hypothesis}
+              </p>
+            </div>
+          )}
+
+          {incident.impact_assessment && (
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase mb-1">Impact Assessment</h4>
+              <p className="text-sm text-slate-200 leading-relaxed bg-slate-950/70 p-4 rounded-lg border border-slate-800/80">
+                {incident.impact_assessment}
+              </p>
+            </div>
+          )}
+
+          {incident.recommendations.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold text-slate-400 uppercase mb-1">Recommendations</h4>
+              <ul className="list-disc list-inside space-y-1 bg-slate-950/70 p-4 rounded-lg border border-slate-800/80">
+                {incident.recommendations.map((r, idx) => (
+                  <li key={idx} className="text-xs text-slate-300">{r}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Story Timeline & Content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Attack Story Narrative Timeline & Tables */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Narrative Attack Story Timeline */}
-          <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-5">
-            <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <Activity className="w-5 h-5 text-cyan-400" />
-              Narrative Incident Story Timeline
-            </h2>
-
-            <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
-              {storySteps.map((step, idx) => (
-                <div key={idx} className="relative group">
-                  {/* Timeline dot */}
-                  <div className="absolute -left-6 top-1 p-1 rounded-full bg-slate-950 border border-slate-700 group-hover:border-cyan-500 transition-colors">
-                    {getStoryIcon(step.type)}
-                  </div>
-
-                  <div className="bg-slate-950/70 p-4 rounded-lg border border-slate-800/80 hover:border-slate-700 transition-colors space-y-2">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-900 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-white uppercase tracking-wider">{step.event}</span>
-                        {step.findingId && (
-                          <Link
-                            href={`/findings/${step.findingId}`}
-                            className="font-mono text-[11px] text-cyan-400 hover:underline bg-slate-900 px-2 py-0.5 rounded border border-slate-800"
-                          >
-                            {step.findingId}
-                          </Link>
-                        )}
-                      </div>
-                      <span className="font-mono text-[11px] text-slate-400">
-                        {new Date(step.timestamp).toLocaleTimeString()} · {new Date(step.timestamp).toLocaleDateString()}
-                      </span>
+          {incident.narrative.length > 0 && (
+            <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-5">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Activity className="w-5 h-5 text-cyan-400" />
+                Correlation Narrative
+              </h2>
+              <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
+                {incident.narrative.map((line, idx) => (
+                  <div key={idx} className="relative">
+                    <div className="absolute -left-6 top-1 p-1 rounded-full bg-slate-950 border border-slate-700">
+                      <Radio className="w-4 h-4 text-cyan-400" />
                     </div>
-
-                    <p className="text-xs text-slate-300 leading-relaxed font-sans">
-                      {step.description}
+                    <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/70 p-3 rounded-lg border border-slate-800/80">
+                      {line}
                     </p>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-4">
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-cyan-400" />
+              Correlated Findings
+            </h2>
+            <div className="divide-y divide-slate-800/60">
+              {incident.findings.length === 0 ? (
+                <p className="text-xs text-slate-500 py-4">No findings attached to this incident.</p>
+              ) : (
+                incident.findings.map(f => (
+                  <Link
+                    key={f.id}
+                    href={`/findings/${f.id}`}
+                    className="flex items-center justify-between py-3 hover:bg-slate-800/40 transition-colors -mx-2 px-2 rounded"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm text-slate-200 truncate">{f.title}</p>
+                      <p className="text-xs text-slate-500 font-mono">{f.id} · {f.category}</p>
+                    </div>
+                    <RiskBadge score={f.risk_score} size="sm" />
+                  </Link>
+                ))
+              )}
             </div>
           </div>
 
-          {/* Correlated Hosts Table */}
           <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-4">
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Server className="w-5 h-5 text-cyan-400" />
@@ -315,52 +333,36 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-mono">
-                  {hosts.map(h => (
-                    <tr key={h.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="p-3">
-                        <Link href={`/network/hosts/${h.id}`} className="hover:text-cyan-300 hover:underline font-bold text-white">
-                          {h.ip}
-                        </Link>
-                        <span className="block text-[11px] text-slate-400 font-sans">{h.hostname}</span>
-                      </td>
-                      <td className="p-3 font-sans text-slate-300">{h.role ?? 'Workstation'}</td>
-                      <td className="p-3">
-                        <RiskBadge score={h.riskScore} size="sm" />
-                      </td>
-                      <td className="p-3 text-slate-300">{h.flows.toLocaleString()}</td>
-                      <td className="p-3 text-slate-400 text-[11px]">
-                        {(h.bytesOut / 1024 / 1024 / 1024).toFixed(2)} GB / {(h.bytesIn / 1024 / 1024).toFixed(1)} MB
-                      </td>
-                      <td className="p-3 text-right">
-                        <Link
-                          href={`/network/hosts/${h.id}`}
-                          className="text-xs text-cyan-400 hover:underline font-sans"
-                        >
-                          Forensics →
-                        </Link>
+                  {hosts.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-4 text-center text-slate-500 font-sans">
+                        No matching hosts found for {incident.source_ips.join(', ') || 'this incident'}.
                       </td>
                     </tr>
-                  ))}
-
-                  {hosts.length === 0 && (
-                    <>
-                      <tr className="hover:bg-slate-800/40">
-                        <td className="p-3 font-bold text-white">10.0.0.14 (FIN-WS-014)</td>
-                        <td className="p-3 font-sans">Financial Workstation</td>
-                        <td className="p-3"><RiskBadge score={89} size="sm" /></td>
-                        <td className="p-3">14,290</td>
-                        <td className="p-3">4.8 GB / 120 MB</td>
-                        <td className="p-3 text-right"><Link href="/network/hosts/HOST-014" className="text-cyan-400 hover:underline font-sans">Forensics →</Link></td>
+                  ) : (
+                    hosts.map(h => (
+                      <tr key={h.id} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3">
+                          <Link href={`/network/hosts/${h.id}`} className="hover:text-cyan-300 hover:underline font-bold text-white">
+                            {h.ip}
+                          </Link>
+                          <span className="block text-[11px] text-slate-400 font-sans">{h.hostname}</span>
+                        </td>
+                        <td className="p-3 font-sans text-slate-300">{h.role ?? 'Workstation'}</td>
+                        <td className="p-3">
+                          <RiskBadge score={h.riskScore} size="sm" />
+                        </td>
+                        <td className="p-3 text-slate-300">{h.flows.toLocaleString()}</td>
+                        <td className="p-3 text-slate-400 text-[11px]">
+                          {(h.bytesOut / 1024 / 1024 / 1024).toFixed(2)} GB / {(h.bytesIn / 1024 / 1024).toFixed(1)} MB
+                        </td>
+                        <td className="p-3 text-right">
+                          <Link href={`/network/hosts/${h.id}`} className="text-xs text-cyan-400 hover:underline font-sans">
+                            Forensics →
+                          </Link>
+                        </td>
                       </tr>
-                      <tr className="hover:bg-slate-800/40">
-                        <td className="p-3 font-bold text-white">10.0.0.28 (DEV-WS-028)</td>
-                        <td className="p-3 font-sans">Dev Workstation</td>
-                        <td className="p-3"><RiskBadge score={68} size="sm" /></td>
-                        <td className="p-3">8,410</td>
-                        <td className="p-3">840 MB / 45 MB</td>
-                        <td className="p-3 text-right"><Link href="/network/hosts/HOST-028" className="text-cyan-400 hover:underline font-sans">Forensics →</Link></td>
-                      </tr>
-                    </>
+                    ))
                   )}
                 </tbody>
               </table>
@@ -368,14 +370,15 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
           </div>
         </div>
 
-        {/* Right Col: Status Panel & Analyst Notes */}
         <div className="space-y-6">
-          {/* Status Lifecycle Transition Panel */}
           <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-4">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-cyan-400" />
               Incident Lifecycle Triage
             </h2>
+            <p className="text-[11px] text-slate-500">
+              Local only — this backend has no endpoint to persist status changes yet.
+            </p>
 
             <div className="space-y-2">
               {[
@@ -403,15 +406,15 @@ export default function IncidentDetailPage({ params }: { params?: Promise<{ inci
             </div>
           </div>
 
-          {/* Analyst Notes */}
           <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-cyan-400" />
                 Analyst Workstation Notes
               </h2>
-              {notesSavedToast && <span className="text-xs text-emerald-400 font-mono animate-fade-in">Saved!</span>}
+              {notesSavedToast && <span className="text-xs text-emerald-400 font-mono">Saved!</span>}
             </div>
+            <p className="text-[11px] text-slate-500">Saved to this browser only.</p>
 
             <textarea
               rows={6}
