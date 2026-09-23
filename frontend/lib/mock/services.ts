@@ -1,4 +1,3 @@
-
 /**
  * NetSentinal AI — Mock Service Layer
  *
@@ -35,6 +34,7 @@ import type {
   SearchResult,
   ListFilters,
 } from '../types'
+import { API_BASE } from '../api'
  
 import {
   MOCK_CUSTOMER,
@@ -194,7 +194,7 @@ export async function getEngagement(id: string): Promise<Engagement> {
  */
 export async function getSensors(customerId?: string): Promise<Sensor[]> {
   try {
-    const health = await fetch('http://localhost:8000/api/health', { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
+    const health = await fetch(`${API_BASE}/api/health`, { cache: 'no-store' }).then(res => res.ok ? res.json() : null)
     if (health) {
       return [
         {
@@ -254,7 +254,7 @@ export async function getSensorMetrics(id: string): Promise<SensorMetrics> {
  
 export async function getCaptures(filters?: Partial<ListFilters>): Promise<Capture[]> {
   try {
-    const res = await fetch('http://localhost:8000/api/jobs', { cache: 'no-store' });
+    const res = await fetch(`${API_BASE}/api/jobs`, { cache: 'no-store' });
     if (res.ok) {
       const rawJobs = await res.json();
       if (Array.isArray(rawJobs)) {
@@ -353,7 +353,7 @@ export async function getTrigger(id: string): Promise<Trigger> {
  */
 export async function getHosts(customerId?: string): Promise<Host[]> {
   try {
-    const res = await fetch('http://localhost:8000/api/entities', { cache: 'no-store' });
+    const res = await fetch(`${API_BASE}/api/entities`, { cache: 'no-store' });
     if (res.ok) {
       const rawEntities = await res.json();
       if (Array.isArray(rawEntities)) {
@@ -395,7 +395,7 @@ export async function getHost(id: string): Promise<Host> {
  
 export async function getDestinations(customerId?: string): Promise<Destination[]> {
   try {
-    const res = await fetch('http://localhost:8000/api/entities', { cache: 'no-store' });
+    const res = await fetch(`${API_BASE}/api/entities`, { cache: 'no-store' });
     if (res.ok) {
       const rawEntities = await res.json();
       if (Array.isArray(rawEntities)) {
@@ -461,7 +461,7 @@ export async function getFlows(filters?: Partial<ListFilters & {
   protocol?: string
 }>): Promise<Flow[]> {
   try {
-    const res = await fetch('http://localhost:8000/api/flows', { cache: 'no-store' });
+    const res = await fetch(`${API_BASE}/api/flows`, { cache: 'no-store' });
     if (res.ok) {
       const rawBackendFlows = await res.json();
       if (Array.isArray(rawBackendFlows)) {
@@ -536,7 +536,7 @@ export async function getFlow(id: string): Promise<Flow> {
  */
 export async function getFindings(filters?: Partial<ListFilters>): Promise<Finding[]> {
   try {
-    const res = await fetch('http://localhost:8000/api/alerts', { cache: 'no-store' });
+    const res = await fetch(`${API_BASE}/api/alerts`, { cache: 'no-store' });
     if (res.ok) {
       const rawBackendAlerts = await res.json();
       if (Array.isArray(rawBackendAlerts)) {
@@ -599,7 +599,7 @@ export async function getFinding(id: string): Promise<Finding> {
  */
 export async function getIncidents(filters?: Partial<ListFilters>): Promise<Incident[]> {
   try {
-    const res = await fetch('http://localhost:8000/api/alerts', { cache: 'no-store' });
+    const res = await fetch(`${API_BASE}/api/alerts`, { cache: 'no-store' });
     if (res.ok) {
       const rawBackendAlerts = await res.json();
       if (Array.isArray(rawBackendAlerts)) {
@@ -810,7 +810,7 @@ function _projectJobAsInvestigation(job: any, hostCount: number): Investigation 
  */
 export async function getInvestigations(customerId?: string): Promise<Investigation[]> {
   try {
-    const res = await fetch('http://localhost:8000/api/jobs', { cache: 'no-store' })
+    const res = await fetch(`${API_BASE}/api/jobs`, { cache: 'no-store' })
     if (res.ok) {
       const jobs = await res.json()
       if (Array.isArray(jobs) && jobs.length > 0) {
@@ -842,8 +842,8 @@ export async function getInvestigations(customerId?: string): Promise<Investigat
 export async function getInvestigation(id: string): Promise<Investigation> {
   try {
     const [jobsRes, entitiesRes] = await Promise.all([
-      fetch('http://localhost:8000/api/jobs', { cache: 'no-store' }),
-      fetch('http://localhost:8000/api/entities', { cache: 'no-store' }).catch(() => null),
+      fetch(`${API_BASE}/api/jobs`, { cache: 'no-store' }),
+      fetch(`${API_BASE}/api/entities`, { cache: 'no-store' }).catch(() => null),
     ])
     if (jobsRes.ok) {
       const jobs = await jobsRes.json()
@@ -899,7 +899,7 @@ export async function getReport(id: string): Promise<Report> {
  */
 export async function getSystemHealth(): Promise<SystemHealth> {
   try {
-    const backendHealth = await fetch('http://localhost:8000/api/health', { cache: 'no-store' }).then(res => res.ok ? res.json() : null);
+    const backendHealth = await fetch(`${API_BASE}/api/health`, { cache: 'no-store' }).then(res => res.ok ? res.json() : null);
     if (backendHealth) {
       return {
         overall: backendHealth.status === 'ok' ? 'healthy' : 'degraded',
@@ -1133,4 +1133,3 @@ export async function searchAll(query: string): Promise<SearchResult[]> {
  
   return results.slice(0, 20) // return top 20
 }
- 
