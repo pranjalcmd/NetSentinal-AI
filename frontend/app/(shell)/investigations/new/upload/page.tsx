@@ -16,8 +16,8 @@ export default function UploadPCAPPage() {
 
   const pickFile = (f: File | null) => {
     setError(null);
-    if (f && !/\.(pcap|pcapng|cap)$/i.test(f.name)) {
-      setError('Unsupported file type — upload a .pcap, .pcapng, or .cap file');
+    if (f && !/\.(pcap|pcapng)$/i.test(f.name)) {
+      setError('Unsupported file type — upload a .pcap or .pcapng file');
       return;
     }
     setFile(f);
@@ -31,7 +31,7 @@ export default function UploadPCAPPage() {
 
   const handleUpload = async () => {
     if (!file) {
-      setError('Choose a .pcap, .pcapng, or .cap file first');
+      setError('Choose a .pcap or .pcapng file first');
       return;
     }
 
@@ -40,6 +40,13 @@ export default function UploadPCAPPage() {
 
     try {
       const job = await uploadPcap(file);
+      // Cache the finished job so the progress page can show it instantly,
+      // even if the backend is slow to list it or has restarted.
+      try {
+        sessionStorage.setItem(`prism:job:${job.job_id}`, JSON.stringify(job));
+      } catch {
+        /* storage unavailable — the progress page will fetch from the backend */
+      }
       router.push(`/investigations/${job.job_id}/progress`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed — try again');
@@ -53,7 +60,7 @@ export default function UploadPCAPPage() {
       <div className="space-y-1">
         <h1 className="text-xl font-bold text-slate-100">Upload a capture</h1>
         <p className="text-xs text-slate-400">
-          Analyze a .pcap, .pcapng, or .cap file through the detection pipeline.
+          Analyze a .pcap or .pcapng file through the detection pipeline.
         </p>
       </div>
 
@@ -74,7 +81,7 @@ export default function UploadPCAPPage() {
         <input
           ref={inputRef}
           type="file"
-          accept=".pcap,.pcapng,.cap"
+          accept=".pcap,.pcapng"
           className="hidden"
           onChange={(e) => pickFile(e.target.files?.[0] || null)}
         />
@@ -93,7 +100,7 @@ export default function UploadPCAPPage() {
             <div className="text-sm text-slate-300 font-medium">
               Drop a capture here, or click to browse
             </div>
-            <div className="text-xs text-slate-500">.pcap, .pcapng, .cap</div>
+            <div className="text-xs text-slate-500">.pcap, .pcapng</div>
           </>
         )}
       </div>
